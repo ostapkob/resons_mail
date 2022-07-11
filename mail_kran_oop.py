@@ -16,7 +16,8 @@ krans_UT = [45, 34, 53, 69, 21, 37, 4, 41, 5, 36, 40, 32,
             25, 11, 33, 20, 8, 22, 12, 13, 6, 26, 47, 54, 14, 16, 82]
 krans_GUT = [28, 18, 1, 35, 31, 17, 58, 60, 49, 38, 39, 23, 48, 72, 65, 10]
 HOURS = 10
-FILTER_MORE = 40
+SIDE_MINUTS_MORE = 40
+PERIOD_MINUTS_MORE = 15
 ServerName = "192.168.99.106"
 Database = "nmtport"
 UserPwd = "ubuntu:Port2020"
@@ -58,6 +59,7 @@ class Mechanism:
             self.diapozones['WORK_3'],
         ]
 
+
     def _get_cursor(self):
         "in kran need only value in USM need value is lever, value3 is roll"
         engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
@@ -81,6 +83,7 @@ class Mechanism:
                 # row[0] -> datetime, row[1] -> value, row[2] -> value3
                 tmp_cursor[row[0]] = [row[1], row[2]]
         return tmp_cursor
+
 
     def _get_diapozones(self) -> Dict[diapozonesType, Period]:
         next_day = self.date_shift + timedelta(days=1)
@@ -109,6 +112,7 @@ class Mechanism:
             )
         return formated_diapozones
 
+
     def _split_by_periods(self, data_period) -> Dict[Period, List[PostKran]]:
         split_periods: Dict[Period, List[PostKran]] = {}
         for work_period in self.work_periods:
@@ -120,6 +124,7 @@ class Mechanism:
                     split_periods[work_period].append(
                         PostKran(timestamp, value))
         return split_periods
+
 
     def _get_delta_ideal_minutes(self, side_time_periods: List[datetime | None]):
         permited_deviation_minutes = [20, 30, 30, 15, 15, 20]
@@ -137,6 +142,7 @@ class Mechanism:
             result.append(self.get_delta_minutes(list_delta_minutes[i],permited_deviation_minutes[i]))
         return result
 
+
     def get_delta_minutes(self, a, b):
         if a is None or b is None:
             return None
@@ -148,6 +154,7 @@ class Mechanism:
             return a-b
         assert "ERR"
         return 0
+
 
     def _filter_if_more(self, items, border):
         new_items = []
@@ -169,6 +176,7 @@ class Kran(Mechanism):
     side_time_periods: List[datetime | None] = []
     TOTAL_PERIOD = 20
     delta_ideal_minutes: List[int | None] = []
+    colors_periods = [] 
 
 
     def __init__(self, mech_id, date, shift):
@@ -177,8 +185,10 @@ class Kran(Mechanism):
         self.split_periods = self._split_by_periods(self.data_period)
         self.side_time_periods=self._get_all_side_time_periods()
         self.delta_ideal_minutes = self._get_delta_ideal_minutes(self.side_time_periods) 
-        # self.delta_ideal_minutes = self._filter_if_more(self.delta_ideal_minutes, FILTER_MORE)
+        # self.delta_ideal_minutes = self._filter_if_more(self.delta_ideal_minutes, SIDE_MINUTS_MORE)
+        self.colors_periods = [self._get_color_period(period) for period in self.split_periods.values()]
         print(self.delta_ideal_minutes)
+        print(self.colors_periods)
 
     def _get_all_side_time_periods(self):
         result = []
@@ -217,15 +227,35 @@ class Kran(Mechanism):
         return None
 
 
-    def _sum_period(self, items):
-        return sum([1 for i in items if i.value > 0])
+    def _sum_period(self, period_values: List[PostKran]):
+        return sum([1 for i in period_values if i.value > 0])
+
+
+    def _get_color_period(self, period_values: List[PostKran]):
+        yellow = sum([1 for i in period_values if i.value == 0])
+        blue = sum([1 for i in period_values if i.value == 2])
+        black = sum([1 for i in period_values if i.value in (1, 3)])
+        orange=  sum([1 for i in period_values if i.value == 5])
+        if blue > 20 and blue>black:
+            return "blue"
+
+        if black > 20 and black>blue:
+            return "back"
+
+        if orange> 12:
+            return "orange"
+
+        if orange< 12 and yellow > 12:
+            return "yellow" 
+        return "red"
+
 
 
 if __name__ == "__main__":
     from list_mechanisms import kran
-    date_shift: date = datetime.now().date() - timedelta(days=4)
-    shift: int = 2
-    num = 13
+    date_shift: date = datetime.now().date() - timedelta(days=8)
+    shift: int = 1
+    num = 39
     print(date_shift, f"{shift=} {num=}")
     print("_________________________")
     k = Kran(kran[num], date_shift, shift)
