@@ -16,29 +16,11 @@ krans_UT = [45, 34, 53, 69, 21, 37, 4, 41, 5, 36, 40, 32,
             25, 11, 33, 20, 8, 22, 12, 13, 6, 26, 47, 54, 14, 16, 82]
 krans_GUT = [28, 18, 1, 35, 31, 17, 58, 60, 49, 38, 39, 23, 48, 72, 65, 10]
 HOURS = 10
+FILTER_MORE = 40
 ServerName = "192.168.99.106"
 Database = "nmtport"
 UserPwd = "ubuntu:Port2020"
 Driver = "driver=ODBC Driver 17 for SQL Server"
-
-
-# @dataclass(frozen=True)
-# class diapozonesType(Enum):
-#     START = "START"
-#     WORK_1 = "WORK_1"
-#     LANCH_START = "LANCH_START"
-#     LANCH_FINISH = "LANCH_FINISH"
-#     WORK_2 = "WORK_2"
-#     TEA_START = "TEA_START"
-#     TEA_FINISH = "TEA_FINISH"
-#     WORK_3 = "WORK_3"
-#     FINISH = "FINISH"
-
-
-# @dataclass(frozen=True)
-# class itemKran:
-#     time_item: datetime
-#     value_item: int
 
 
 class Period(NamedTuple):
@@ -51,17 +33,10 @@ class PostKran(NamedTuple):
     value: int
 
 
-diapozonesType = Literal["START",
+diapozonesType = Literal[
                          "WORK_1",
-                         "START",
-                         "LANCH_START",
-                         "LANCH_FINISH",
                          "WORK_2",
-                         "TEA",
-                         "TEA_START",
-                         "TEA_FINISH",
                          "WORK_3",
-                         "FINISH"
                          ]
 
 
@@ -75,7 +50,7 @@ class Mechanism:
         self.date_shift = date_shift
         self.shift = shift
         self.cursor = self._get_cursor()
-        self.diapozones = self._get_yellow_diapozones()
+        self.diapozones = self._get_diapozones()
         # print(self.diapozones['START'].begin, self.diapozones['WORK_1'].stop)
         self.work_periods = [
             self.diapozones['WORK_1'],
@@ -107,25 +82,12 @@ class Mechanism:
                 tmp_cursor[row[0]] = [row[1], row[2]]
         return tmp_cursor
 
-    def _get_yellow_diapozones(self) -> Dict[diapozonesType, Period]:
+    def _get_diapozones(self) -> Dict[diapozonesType, Period]:
         next_day = self.date_shift + timedelta(days=1)
         date_shift = str(self.date_shift) + " "
         next_day = str(next_day) + " "
         format = '%Y-%m-%d %H:%M'
         if self.shift == 1:
-            # diapozones = {
-            #     'START':        [date_shift + '08:00', date_shift + '08:20'],
-            #     'WORK_1':       [date_shift + '08:20', date_shift + '12:00'],
-            #     'LANCH':  [date_shift + '12:00', date_shift + '13:00'],
-            #     # 'LANCH_START':  [date_shift + '11:59', date_shift + '12:00'],
-            #     # 'LANCH_FINISH': [date_shift + '13:00', date_shift + '13:01'],
-            #     'WORK_2':       [date_shift + '13:00', date_shift + '16:30'],
-            #     'TEA':    [date_shift + '16:30', date_shift + '17:00'],
-            #     # 'TEA_START':    [date_shift + '16:29', date_shift + '16:30'],
-            #     # 'TEA_FINISH':   [date_shift + '17:00', date_shift + '17:01'],
-            #     'WORK_3':       [date_shift + '17:00', date_shift + '19:40'],
-            #     'FINISH':       [date_shift + '19:40', date_shift + '20:00'],
-            # }
             diapozones = {
                 'WORK_1':       [date_shift + '08:00', date_shift + '12:30'],
                 'WORK_2':       [date_shift + '12:31', date_shift + '16:45'],
@@ -133,15 +95,9 @@ class Mechanism:
             }
         elif self.shift == 2:
             diapozones = {
-                'START':        [date_shift + '20:00',  date_shift + '20:20'],
-                'WORK_1':       [date_shift + '20:20',  next_day + '00:59'],
-                'LANCH_START':  [next_day + '00:59',    next_day + '01:00'],
-                'LANCH_FINISH': [next_day + '02:00',    next_day + '02:01'],
-                'WORK_2':       [next_day + '02:01',    next_day + '04:29'],
-                'TEA_START':    [next_day + '04:29',    next_day + '04:30'],
-                'TEA_FINISH':   [next_day + '05:00',    next_day + '05:01'],
-                'WORK_3':       [next_day + '05:01',    next_day + '07:40'],
-                'FINISH':       [next_day + '07:40',    next_day + '08:00'],
+                'WORK_1':       [date_shift + '20:00',  next_day + '01:30'],
+                'WORK_2':       [next_day + '01:31',    next_day + '04:45'],
+                'WORK_3':       [next_day + '04:45',    next_day + '08:00'],
             }
         else:
             raise AttributeError
@@ -165,62 +121,77 @@ class Mechanism:
                         PostKran(timestamp, value))
         return split_periods
 
-    # def _get_red_zones(self) -> List[datetime]:
-    #     zones = [
-    #         self.diapozones['START'].stop + timedelta(minutes=10),  # >
-    #         self.diapozones['LANCH_START'].begin - timedelta(minutes=5),  # <
-    #         self.diapozones['LANCH_FINISH'].stop + timedelta(minutes=5),  # >
-    #         self.diapozones['TEA_START'].begin - timedelta(minutes=5),  # <
-    #         self.diapozones['TEA_FINISH'].stop + timedelta(minutes=5),  # >
-    #         self.diapozones['FINISH'].begin - timedelta(minutes=10),  # <
-    #     ]
-    #     return zones
-
-    def delta_minutes(self, side_time_periods: List[datetime | None]):
-        # return 
-        # self.work_periods[0].begin 
-        # self.work_periods[0].stop)
-        print(self.get_delta_minutes(side_time_periods[0], self.work_periods[0].begin))
-        print(self.get_delta_minutes(self.work_periods[0].stop, side_time_periods[1]))
-        print(self.get_delta_minutes(side_time_periods[2], self.work_periods[1].begin))
-        print(self.get_delta_minutes(self.work_periods[1].stop, side_time_periods[3]))
-        print(self.get_delta_minutes(side_time_periods[4], self.work_periods[2].begin))
-        print(self.get_delta_minutes(self.work_periods[2].stop, side_time_periods[5]))
+    def _get_delta_ideal_minutes(self, side_time_periods: List[datetime | None]):
+        permited_deviation_minutes = [20, 30, 30, 15, 15, 20]
+        list_delta_minutes: List[float | None] = [
+            self.get_delta_minutes(side_time_periods[0], self.work_periods[0].begin),
+            self.get_delta_minutes(self.work_periods[0].stop, side_time_periods[1]),
+            self.get_delta_minutes(side_time_periods[2], self.work_periods[1].begin),
+            self.get_delta_minutes(self.work_periods[1].stop, side_time_periods[3]),
+            self.get_delta_minutes(side_time_periods[4], self.work_periods[2].begin),
+            self.get_delta_minutes(self.work_periods[2].stop, side_time_periods[5])
+        ]
+        print(list_delta_minutes)
+        result = []
+        for i in range(6):
+            result.append(self.get_delta_minutes(list_delta_minutes[i],permited_deviation_minutes[i]))
+        return result
 
     def get_delta_minutes(self, a, b):
-        print(a,"    ", b)
         if a is None or b is None:
-            return 0
+            return None
         if isinstance(a, datetime)\
             and isinstance(b, datetime):
-            return (a - b).total_seconds()/60
+            return int((a - b).total_seconds()/60)
+        if isinstance(a, int)\
+            and isinstance(b, int):
+            return a-b
+        assert "ERR"
+        return 0
+
+    def _filter_if_more(self, items, border):
+        new_items = []
+        for i in items:
+            if i is None:
+                new_items.append(None)
+            elif i > border:
+                new_items.append(0)
+            else:
+                new_items.append(i)
+        return new_items
+
 
 class Kran(Mechanism):
     itemsKran = Dict[datetime, int]
     data_period: itemsKran = {}
     split_periods: Dict[Period, List[PostKran]] = {}
     sum_split_periods: Dict[Period, int] = {}
+    side_time_periods: List[datetime | None] = []
     TOTAL_PERIOD = 20
+    delta_ideal_minutes: List[int | None] = []
 
 
     def __init__(self, mech_id, date, shift):
         super().__init__(mech_id, date, shift)
         self.data_period = self._convert_cursor_to_kran()
-        # self.red_zones = self._get_red_zones()
         self.split_periods = self._split_by_periods(self.data_period)
+        self.side_time_periods=self._get_all_side_time_periods()
+        self.delta_ideal_minutes = self._get_delta_ideal_minutes(self.side_time_periods) 
+        # self.delta_ideal_minutes = self._filter_if_more(self.delta_ideal_minutes, FILTER_MORE)
+        print(self.delta_ideal_minutes)
 
-        side_time_periods: List[datetime | None] = []
+    def _get_all_side_time_periods(self):
+        result = []
         for i in self.split_periods.values():
             tmp = self._get_side_time_periods(i)
-            side_time_periods.append(tmp[0])
-            side_time_periods.append(tmp[1])
-
-
-        self.delta_minutes(side_time_periods)
+            result.append(tmp[0])
+            result.append(tmp[1])
+        return result
 
 
     def _convert_cursor_to_kran(self) -> itemsKran:
         return {k: int(v[0]) for k, v in self.cursor.items()}
+
 
     def _get_side_time_periods(self, period_values: List[PostKran]):
         if self._sum_period(period_values) > self.TOTAL_PERIOD:  # TODO if only move ?
@@ -252,9 +223,9 @@ class Kran(Mechanism):
 
 if __name__ == "__main__":
     from list_mechanisms import kran
-    date_shift: date = datetime.now().date() - timedelta(days=5)
-    num = 47
-    print(date_shift, f"{num=}")
-    print("____________________")
-    shift: int = 1
+    date_shift: date = datetime.now().date() - timedelta(days=4)
+    shift: int = 2
+    num = 13
+    print(date_shift, f"{shift=} {num=}")
+    print("_________________________")
     k = Kran(kran[num], date_shift, shift)
