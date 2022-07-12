@@ -7,10 +7,10 @@ from datetime import datetime, timedelta, date
 import sys
 # from dataclasses import dataclass
 from typing import List, Dict, Literal, NamedTuple
-# from enum import Enum
+from enum import Enum
 # from collections import defaultdict
 sys.path.insert(0, '/home/admin/nmtport')
-mail_pass = os.environ['YANDEX_MAIL']
+# mail_pass = os.environ['YANDEX_MAIL']
 
 krans_UT = [45, 34, 53, 69, 21, 37, 4, 41, 5, 36, 40, 32,
             25, 11, 33, 20, 8, 22, 12, 13, 6, 26, 47, 54, 14, 16, 82]
@@ -29,21 +29,35 @@ class Period(NamedTuple):
     stop: datetime
 
 
-class PostKran(NamedTuple):
+class Post(NamedTuple):
     timestamp: datetime
     value: int
 
 
+class Color(Enum):
+    red = "red"
+    yellow = "yellow"
+    black = "black"
+    blue = "blue"
+    orange = "orange"
+
+
 diapozonesType = Literal[
-                         "WORK_1",
-                         "WORK_2",
-                         "WORK_3",
-                         ]
+    "WORK_1",
+    "WORK_3",
+]
+
+itemsMech = List[Post]
 
 
 class Mechanism:
     cursor: Dict[datetime, List[float]] = {}
-    diapozones: Dict[diapozonesType, Period] = {}
+    data_period: itemsMech = []
+    split_periods: Dict[Period, itemsMech] = {}
+    side_time_periods: List[datetime | None] = []
+    delta_allowable_range: List[int | None] = []
+    colors_periods = []
+    TOTAL_PERIOD = 20  # if work more than
 
     def __init__(self, mech_id: int, date_shift: date, shift: int):
         assert date_shift <= datetime.now().date()
@@ -51,16 +65,12 @@ class Mechanism:
         self.date_shift = date_shift
         self.shift = shift
         self.cursor = self._get_cursor()
-        self.diapozones = self._get_diapozones()
-        # print(self.diapozones['START'].begin, self.diapozones['WORK_1'].stop)
-        self.work_periods = [
-            self.diapozones['WORK_1'],
-            self.diapozones['WORK_2'],
-            self.diapozones['WORK_3'],
-        ]
+        # self.diapozones = self._get_diapozones()
+        self.time_lanch = self._get_time_lanch()
+        self.time_tea = self._get_time_tea()
+        self.time_shift = self._get_time_shift()
 
-
-    def _get_cursor(self):
+    def _get_cursor(self) -> Dict[datetime, List[float]]:
         "in kran need only value in USM need value is lever, value3 is roll"
         engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
                                ServerName + '/' + Database + "?" + Driver)
@@ -84,79 +94,94 @@ class Mechanism:
                 tmp_cursor[row[0]] = [row[1], row[2]]
         return tmp_cursor
 
-
-    def _get_diapozones(self) -> Dict[diapozonesType, Period]:
+    def _get_time_lanch(self):
         next_day = self.date_shift + timedelta(days=1)
         date_shift = str(self.date_shift) + " "
         next_day = str(next_day) + " "
         format = '%Y-%m-%d %H:%M'
         if self.shift == 1:
-            diapozones = {
-                'WORK_1':       [date_shift + '08:00', date_shift + '12:30'],
-                'WORK_2':       [date_shift + '12:31', date_shift + '16:45'],
-                'WORK_3':       [date_shift + '16:46', date_shift + '20:00'],
-            }
+            v = [date_shift + '12:00', date_shift + '13:00']
         elif self.shift == 2:
-            diapozones = {
-                'WORK_1':       [date_shift + '20:00',  next_day + '01:30'],
-                'WORK_2':       [next_day + '01:31',    next_day + '04:45'],
-                'WORK_3':       [next_day + '04:45',    next_day + '08:00'],
-            }
+            v = [next_day + '01:00',    next_day + '02:00']
         else:
             raise AttributeError
-        formated_diapozones = {}
-        for k, v in diapozones.items():
-            formated_diapozones[k] = Period(
-                datetime.strptime(v[0], format),
-                datetime.strptime(v[1], format)
-            )
-        return formated_diapozones
+        return Period(datetime.strptime(v[0], format),
+                      datetime.strptime(v[1], format))
 
+    def _get_time_tea(self):
+        next_day = self.date_shift + timedelta(days=1)
+        date_shift = str(self.date_shift) + " "
+        next_day = str(next_day) + " "
+        format = '%Y-%m-%d %H:%M'
+        if self.shift == 1:
+            v = [date_shift + '16:30', date_shift + '17:00']
+        elif self.shift == 2:
+            v = [next_day + '04:30',    next_day + '05:00']
+        else:
+            raise AttributeError
+        return Period(datetime.strptime(v[0], format),
+                      datetime.strptime(v[1], format))
 
-    def _split_by_periods(self, data_period) -> Dict[Period, List[PostKran]]:
-        split_periods: Dict[Period, List[PostKran]] = {}
-        for work_period in self.work_periods:
-            split_periods[work_period] = []
+    def _get_time_shift(self):
+        next_day = self.date_shift + timedelta(days=1)
+        date_shift = str(self.date_shift) + " "
+        next_day = str(next_day) + " "
+        format = '%Y-%m-%d %H:%M'
+        if self.shift == 1:
+            v = [date_shift + '08:00', date_shift + '20:00']
+        elif self.shift == 2:
+            v = [date_shift + '20:00',  next_day + '08:00']
+        else:
+            raise AttributeError
+        return Period(datetime.strptime(v[0], format),
+                      datetime.strptime(v[1], format))
 
-        for timestamp, value in data_period.items():
-            for work_period in self.work_periods:
-                if timestamp > work_period.begin and timestamp < work_period.stop:
-                    split_periods[work_period].append(
-                        PostKran(timestamp, value))
-        return split_periods
-
-
-    def _get_delta_ideal_minutes(self, side_time_periods: List[datetime | None]):
-        permited_deviation_minutes = [20, 30, 30, 15, 15, 20]
-        list_delta_minutes: List[float | None] = [
-            self.get_delta_minutes(side_time_periods[0], self.work_periods[0].begin),
-            self.get_delta_minutes(self.work_periods[0].stop, side_time_periods[1]),
-            self.get_delta_minutes(side_time_periods[2], self.work_periods[1].begin),
-            self.get_delta_minutes(self.work_periods[1].stop, side_time_periods[3]),
-            self.get_delta_minutes(side_time_periods[4], self.work_periods[2].begin),
-            self.get_delta_minutes(self.work_periods[2].stop, side_time_periods[5])
-        ]
-        print(list_delta_minutes)
-        result = []
-        for i in range(6):
-            result.append(self.get_delta_minutes(list_delta_minutes[i],permited_deviation_minutes[i]))
-        return result
-
-
-    def get_delta_minutes(self, a, b):
+    def _get_delta_minutes(self, a, b) -> None | int:
         if a is None or b is None:
             return None
         if isinstance(a, datetime)\
-            and isinstance(b, datetime):
+                and isinstance(b, datetime):
             return int((a - b).total_seconds()/60)
         if isinstance(a, int)\
-            and isinstance(b, int):
+                and isinstance(b, int):
             return a-b
         assert "ERR"
         return 0
 
+    def _find_max_empty_period(self, all_period, break_period: Period) -> Period:
+        "return period from start_shift from atrt to stop"
+        dt = self._get_delta_minutes(break_period.stop, break_period.begin)
+        if dt is None:
+            return break_period
+        dt /= 2
+        begin = break_period.begin + timedelta(minutes=dt)
+        stop = break_period.stop - timedelta(minutes=dt)
+        break_begin = break_period.begin - timedelta(minutes=5)
+        break_stop = break_period.stop + timedelta(minutes=5)
+        max_period = 15
+        my_period = [x for x in all_period if x.timestamp >
+                     break_begin and x.timestamp < break_stop]
+        if len(my_period) < 2:
+            return break_period
+        tmp = my_period[0]
+        for i in my_period[0:]:
+            period = self._get_delta_float_minutes(i.timestamp, tmp.timestamp)
+            if period > max_period:
+                max_period = period
+                begin = tmp.timestamp
+                stop = i.timestamp
+            if i.value > 0:
+                tmp = i
+        return Period(begin, stop)
 
-    def _filter_if_more(self, items, border):
+    def _get_delta_float_minutes(self, a: datetime, b: datetime) -> float:
+        if isinstance(a, datetime)\
+                and isinstance(b, datetime):
+            return (a - b).total_seconds()/60
+        assert "types not datetime"
+        return 0.0
+
+    def _filter_if_more(self, items: List[int | None], border: int) -> List[int | None]:
         new_items = []
         for i in items:
             if i is None:
@@ -167,43 +192,51 @@ class Mechanism:
                 new_items.append(i)
         return new_items
 
-
-class Kran(Mechanism):
-    itemsKran = Dict[datetime, int]
-    data_period: itemsKran = {}
-    split_periods: Dict[Period, List[PostKran]] = {}
-    sum_split_periods: Dict[Period, int] = {}
-    side_time_periods: List[datetime | None] = []
-    TOTAL_PERIOD = 20
-    delta_ideal_minutes: List[int | None] = []
-    colors_periods = [] 
-
-
-    def __init__(self, mech_id, date, shift):
-        super().__init__(mech_id, date, shift)
-        self.data_period = self._convert_cursor_to_kran()
-        self.split_periods = self._split_by_periods(self.data_period)
-        self.side_time_periods=self._get_all_side_time_periods()
-        self.delta_ideal_minutes = self._get_delta_ideal_minutes(self.side_time_periods) 
-        # self.delta_ideal_minutes = self._filter_if_more(self.delta_ideal_minutes, SIDE_MINUTS_MORE)
-        self.colors_periods = [self._get_color_period(period) for period in self.split_periods.values()]
-        print(self.delta_ideal_minutes)
-        print(self.colors_periods)
-
-    def _get_all_side_time_periods(self):
+    def _convert_to_allowable_range(self, delta_minutes):
+        allowable_range = [20, 0, 0, 0, 0, 20]
         result = []
-        for i in self.split_periods.values():
+        for i in range(6):
+            result.append(self._get_delta_minutes(
+                delta_minutes[i], allowable_range[i]))
+        return result
+
+    def _total_minuts_work(self, data_period):
+        "if brek more 15 minutes then count how not work"
+        total_work = 0
+        work_values = [x for x in data_period if x.value > 0]
+        if len(work_values) < 2:
+            return 0
+        tmp = work_values[0]
+        for i in work_values[0:]:
+            dt = self._get_delta_float_minutes(i.timestamp, tmp.timestamp)
+            if dt < 15:
+                total_work += dt
+            tmp = i
+        return total_work
+
+    def _get_delta_allowable_range(self, side_time_periods: List[datetime | None]) -> List[int | None]:
+        list_delta_minutes: List[int | None] = [
+            self._get_delta_minutes(
+                side_time_periods[0], self.time_shift.begin),
+            self._get_delta_minutes(
+                self.time_lanch.begin, side_time_periods[1]),
+            self._get_delta_minutes(
+                side_time_periods[2], self.time_lanch.stop),
+            self._get_delta_minutes(self.time_tea.begin, side_time_periods[3]),
+            self._get_delta_minutes(side_time_periods[4], self.time_tea.stop),
+            self._get_delta_minutes(self.time_shift.stop, side_time_periods[5])
+        ]
+        return list_delta_minutes
+
+    def _get_all_side_time_periods(self, periods) -> List[datetime | None]:
+        result = []
+        for i in periods.values():
             tmp = self._get_side_time_periods(i)
             result.append(tmp[0])
             result.append(tmp[1])
         return result
 
-
-    def _convert_cursor_to_kran(self) -> itemsKran:
-        return {k: int(v[0]) for k, v in self.cursor.items()}
-
-
-    def _get_side_time_periods(self, period_values: List[PostKran]):
+    def _get_side_time_periods(self, period_values: List[Post]) -> List[datetime | None]:
         if self._sum_period(period_values) > self.TOTAL_PERIOD:  # TODO if only move ?
             return [
                 self._get_first_not_empty_value(period_values),
@@ -212,50 +245,87 @@ class Kran(Mechanism):
         else:
             return [None, None]
 
-
-    def _get_first_not_empty_value(self, period_values: List[PostKran]):
+    def _get_first_not_empty_value(self, period_values: List[Post]) -> datetime | None:
         for i in period_values:
             if i.value > 0:
                 return i.timestamp
         return None
 
-
-    def _get_last_not_empty_value(self, period_values: List[PostKran]):
+    def _get_last_not_empty_value(self, period_values: List[Post]) -> datetime | None:
         for i in period_values[::-1]:
             if i.value > 0:
                 return i.timestamp
         return None
 
-
-    def _sum_period(self, period_values: List[PostKran]):
+    def _sum_period(self, period_values: List[Post]) -> int:
         return sum([1 for i in period_values if i.value > 0])
 
+    def _split_by_periods(self, data_period, work_periods) -> Dict[Period, List[Post]]:
+        split_periods: Dict[Period, List[Post]] = {}
+        for work_period in work_periods:
+            split_periods[work_period] = []
 
-    def _get_color_period(self, period_values: List[PostKran]):
+        for timestamp, value in data_period:
+            for work_period in work_periods:
+                if timestamp > work_period.begin and timestamp < work_period.stop:
+                    split_periods[work_period].append(
+                        Post(timestamp, value))
+        return split_periods
+
+
+class Kran(Mechanism):
+    def __init__(self, mech_id, date, shift):
+        super().__init__(mech_id, date, shift)
+        self.data_period = self._convert_cursor_to_kran()
+        break_lanch = self._find_max_empty_period(
+            self.data_period, self.time_lanch)
+        break_tea = self._find_max_empty_period(
+            self.data_period, self.time_tea)
+        self.work_periods = [
+            Period(self.time_shift.begin, break_lanch.begin),
+            Period(break_lanch.stop, break_tea.begin),
+            Period(break_tea.stop, self.time_shift.stop)
+        ]
+        self.split_periods = self._split_by_periods(
+            self.data_period, self.work_periods)
+        self.side_time_periods = self._get_all_side_time_periods(
+            self.split_periods)
+        self.delta_allowable_range = self._get_delta_allowable_range(
+            self.side_time_periods)
+        self.colors_periods = [self._get_color_period(
+            period) for period in self.split_periods.values()]
+        self.delta_allowable_range = self._convert_to_allowable_range(
+            self.delta_allowable_range)
+        self.delta_allowable_range = self._filter_if_more(
+            self.delta_allowable_range, SIDE_MINUTS_MORE)
+        print(self.delta_allowable_range)
+        print(self.colors_periods)
+        print(self._total_minuts_work(self.data_period))
+
+    def _convert_cursor_to_kran(self) -> itemsMech:
+        return [Post(k, int(v[0])) for k, v in self.cursor.items()]
+
+    def _get_color_period(self, period_values: List[Post]):
         yellow = sum([1 for i in period_values if i.value == 0])
         blue = sum([1 for i in period_values if i.value == 2])
         black = sum([1 for i in period_values if i.value in (1, 3)])
-        orange=  sum([1 for i in period_values if i.value == 5])
-        if blue > 20 and blue>black:
-            return "blue"
-
-        if black > 20 and black>blue:
-            return "back"
-
-        if orange> 12:
-            return "orange"
-
-        if orange< 12 and yellow > 12:
-            return "yellow" 
-        return "red"
-
+        orange = sum([1 for i in period_values if i.value == 5])
+        if blue > 20 and blue > black:
+            return Color.blue
+        if black > 20 and black > blue:
+            return Color.black
+        if orange > 12:
+            return Color.orange
+        if orange < 12 and yellow > 12:
+            return Color.yellow
+        return Color.red
 
 
 if __name__ == "__main__":
     from list_mechanisms import kran
-    date_shift: date = datetime.now().date() - timedelta(days=8)
+    date_shift: date = datetime.now().date() - timedelta(days=1)
     shift: int = 1
-    num = 39
+    num = 6
     print(date_shift, f"{shift=} {num=}")
     print("_________________________")
     k = Kran(kran[num], date_shift, shift)
