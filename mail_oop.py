@@ -16,7 +16,7 @@ krans_UT = [45, 34, 53, 69, 21, 37, 4, 41, 5, 36, 40, 32,
             25, 11, 33, 20, 8, 22, 12, 13, 6, 26, 47, 54, 14, 16, 82]
 krans_GUT = [28, 18, 1, 35, 31, 17, 58, 60, 49, 38, 39, 23, 48, 72, 65, 10]
 HOURS = 10
-SIDE_MINUTS_MORE = 40
+FILTER_MINUTS_MORE = 40
 ServerName = "192.168.99.106"
 Database = "nmtport"
 UserPwd = "ubuntu:Port2020"
@@ -53,6 +53,7 @@ class Mechanism:
     colors_periods = []
     TOTAL_PERIOD = 20  # if work more than
     work_periods = []
+    resons: List[int | None] = []
 
     def __init__(self, mech_id: int, date_shift: date, shift: int):
         assert date_shift <= datetime.now().date()
@@ -60,8 +61,7 @@ class Mechanism:
         self.date_shift = date_shift
         self.shift = shift
         self.cursor = self._get_cursor()
-        self.resons = self._get_resons_from_db()
-        # self.diapozones = self._get_diapozones()
+        self.cursor_resons = self._get_resons_from_db()
         self.time_lanch = self._get_time_lanch()
         self.time_tea = self._get_time_tea()
         self.time_shift = self._get_time_shift()
@@ -152,7 +152,7 @@ class Mechanism:
         dt /= 2
         begin = break_period.begin + timedelta(minutes=dt)
         stop = break_period.stop - timedelta(minutes=dt)
-        break_begin = break_period.begin #- timedelta(minutes=5)
+        break_begin = break_period.begin  # - timedelta(minutes=5)
         break_stop = break_period.stop + timedelta(minutes=5)
         max_period = 15
         my_period = [x for x in all_period if x.timestamp >
@@ -198,6 +198,7 @@ class Mechanism:
 
     def _total_minuts_work(self, data_period) -> int:
         "if brek more 15 minutes then count how not work"
+        BREAK = 15
         total_work = 0
         work_values = [x for x in data_period if x.value > 0]
         if len(work_values) < 2:
@@ -205,7 +206,7 @@ class Mechanism:
         tmp = work_values[0]
         for i in work_values[0:]:
             dt = self._get_delta_float_minutes(i.timestamp, tmp.timestamp)
-            if dt < 15:
+            if dt < BREAK:
                 total_work += dt
             tmp = i
         return int(total_work)
@@ -268,21 +269,10 @@ class Mechanism:
                         Post(timestamp, value))
         return split_periods
 
-    def _get_resons_from_db(self):
+    def _get_resons_from_db(self) -> List[List]:
         engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
                                ServerName + '/' + Database + "?" + Driver)
-        # sql = """
-        # SELECT TOP (1000)
-        #      dateadd(hour, """ + str(HOURS) + """, [timestamp]) as time
-        #     ,[value]
-        #     ,[value3]
-        # FROM [nmtport].[dbo].[[mechanism_downtime_1C]]
-        # where
-        # mechanism_id=""" + str(self.mech_id) + """ and
-        # date_shift='""" + str(self.date_shift) + """' and
-        # shift=""" + str(self.shift) + """
-        # order by timestamp  """
-        sql =  """
+        sql = """
         SELECT TOP (1000) [id]
               ,[inv_num]
               ,[data_smen]
@@ -294,7 +284,7 @@ class Mechanism:
           FROM [nmtport].[dbo].[mechanism_downtime_1C]
             where 
           inv_num=""" + str(self.mech_id) + """
-          and data_smen=CONVERT(datetime, '""" + str(self.date_shift) +""" 00:00:00', 120) 
+          and data_smen=CONVERT(datetime, '""" + str(self.date_shift) + """ 00:00:00', 120) 
           and smena=""" + str(self.shift) + """
 
           order by data_nach
@@ -303,10 +293,51 @@ class Mechanism:
         with engine.connect() as con:
             rs = con.execute(sql)
             for row in rs:
-                # row[0] -> datetime, row[1] -> value, row[2] -> value3
-                # tmp_cursor[row[0]] = [row[1], row[2]]
-                tmp_cursor.append([Period(row.data_nach, row.data_kon), row.id_downtime])
+                tmp_cursor.append(
+                    [Period(row.data_nach, row.data_kon), row.id_downtime])
         return tmp_cursor
+
+    def _check_exist_resons(self, timestamp: datetime | None) -> int | None:
+        if timestamp is None:
+            return None
+        for [begin, stop], reson in self.cursor_resons:
+            begin -= timedelta(minutes=2)
+            stop += timedelta(minutes=2)
+            if timestamp > begin and timestamp < stop:
+                return reson
+        return None
+
+    def _get_resons(self) -> List[int | None]:
+        return [self._check_exist_resons(i) for i in self.side_time_periods]
+
+    def _get_bg_cells(self):
+        border = [10, 5, 5, 5, 5, 10]
+        result = []
+        for i in range(6):
+            if self.resons[i]:
+                result.append('white')
+                continue
+            if self.delta_allowable_range[i] is None:
+                result.append('white')
+                continue
+            if self.delta_allowable_range[i] <= 0:
+                result.append('white')
+                continue
+            if self.delta_allowable_range[i] > border[i]:
+                result.append('red')
+                continue
+            if self.delta_allowable_range[i] < border[i]:
+                result.append('yellow')
+                continue
+            result.append('white')
+        return result
+
+    def show(self):
+        print(self.colors_periods)
+        print(f"{self.delta_allowable_range=}")
+        print(f"{self.resons=}")
+        print(f"{self._total_minuts_work(self.data_period)=}")
+        print(f"{self._get_bg_cells()=}")
 
 
 class Kran(Mechanism):
@@ -317,10 +348,8 @@ class Kran(Mechanism):
         self.colors_periods = [self._get_color_period(
             period) for period in self.split_periods.values()]
 
-
     def _convert_cursor_to_kran(self) -> itemsMech:
         return [Post(k, int(v[0])) for k, v in self.cursor.items()]
-
 
     def _get_color_period(self, period_values: List[Post]) -> Color:
         yellow = sum([1 for i in period_values if i.value == 0])
@@ -338,13 +367,6 @@ class Kran(Mechanism):
         return Color.red
 
 
-    def show(self):
-        print(self.colors_periods)
-        print(self.delta_allowable_range)
-        print(self._total_minuts_work(self.data_period))
-
-
-
 class Usm(Mechanism):
     def __init__(self, mech_id, date, shift):
         super().__init__(mech_id, date, shift)
@@ -353,32 +375,23 @@ class Usm(Mechanism):
         self.colors_periods = [self._get_color_period(
             period) for period in self.split_periods.values()]
 
-
     def _convert_cursor_to_usm(self) -> itemsMech:
-        # return [Post(k, int(v[0])) for k, v in self.cursor.items()]
         result = []
         for timestamp, [lever, roll] in self.cursor.items():
-            if lever>0.05 and roll>4:
+            if lever > 0.1 and roll > 4:
                 result.append(Post(timestamp, 1))
             else:
                 result.append(Post(timestamp, 0))
         return result
 
-
     def _get_color_period(self, period_values: List[Post]) -> Color:
         yellow = sum([1 for i in period_values if i.value == 0])
         blue = sum([1 for i in period_values if i.value > 0])
-        if blue > 40: 
+        if blue > 40:
             return Color.blue
         if yellow > 40:
             return Color.yellow
         return Color.red
-
-
-    def show(self):
-        print(self.colors_periods)
-        print(self.delta_allowable_range)
-        print(self._total_minuts_work(self.data_period))
 
 
 def call_methods(obj: Mechanism):
@@ -400,19 +413,20 @@ def call_methods(obj: Mechanism):
     obj.delta_allowable_range = obj._convert_to_allowable_range(
         obj.delta_allowable_range)
     obj.delta_allowable_range = obj._filter_if_more(
-        obj.delta_allowable_range, SIDE_MINUTS_MORE)
+        obj.delta_allowable_range, FILTER_MINUTS_MORE)
+    obj.resons = obj._get_resons()
+
 
 if __name__ == "__main__":
     from list_mechanisms import kran, usm
-    date_shift: date = datetime.now().date() - timedelta(days=5)
+    date_shift: date = datetime.now().date() - timedelta(days=1)
     shift: int = 1
-    num = 12
+    num = 31
     print(date_shift, f"{shift=} {num=}")
     print("_________________________")
 
+    k = Kran(kran[num], date_shift, shift)
+    k.show()
 
-    # k = Kran(kran[num], date_shift, shift)
-    # k.show()
-
-    u = Usm(usm[num], date_shift, shift)
-    u.show()
+    # u = Usm(usm[num], date_shift, shift)
+    # u.show()
