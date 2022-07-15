@@ -8,6 +8,8 @@ import sys
 from typing import List, Dict,  NamedTuple
 from enum import Enum
 sys.path.insert(0, '/home/admin/nmtport')
+from tabulate import tabulate
+from list_mechanisms import krans as dict_krans, usms as dict_usms
 # from dataclasses import dataclass
 # from collections import defaultdict
 # mail_pass = os.environ['YANDEX_MAIL']
@@ -39,21 +41,48 @@ class Color(Enum):
     black = "black"
     blue = "blue"
     orange = "orange"
+    
 
+class BgColor(Enum):
+    red = "bg-red"
+    yellow = "bg-yellow"
+    white = "bg-white"
+    gray = "bg-gray"
+
+
+class FontColor(Enum):
+    red = "font-red"
+    green = "font-green"
+    white = "font-white"
+
+
+class PeriodColor(Enum):
+    red = "line-red"
+    yellow = "line-yellow"
+    blue = "line-blue"
+    orange = "line-orange"
+    black = "line-black"
 
 itemsMech = List[Post]
 
 
 class Mechanism:
+
     cursor: Dict[datetime, List[float]] = {}
     data_period: itemsMech = []
     split_periods: Dict[Period, itemsMech] = {}
     side_time_periods: List[datetime | None] = []
-    delta_allowable_range: List[int | None] = []
+    dt_minutes: List[int | None] = []
     colors_periods = []
     TOTAL_PERIOD = 20  # if work more than
     work_periods = []
     resons: List[int | None] = []
+    str_resons: List[str] = []
+    bg_cells: List[BgColor] = []
+    times: List[str] = []
+    font_cells: List[FontColor] = []
+    sum_dt_minutes: int
+    total_work_time: int
 
     def __init__(self, mech_id: int, date_shift: date, shift: int):
         assert date_shift <= datetime.now().date()
@@ -96,9 +125,9 @@ class Mechanism:
         next_day = str(next_day) + " "
         format = '%Y-%m-%d %H:%M'
         if self.shift == 1:
-            v = [date_shift + '12:00', date_shift + '13:00']
+            v = [date_shift + '12:01', date_shift + '13:00']
         elif self.shift == 2:
-            v = [next_day + '01:00',    next_day + '02:00']
+            v = [next_day + '01:01',    next_day + '02:00']
         else:
             raise AttributeError
         return Period(datetime.strptime(v[0], format),
@@ -110,9 +139,9 @@ class Mechanism:
         next_day = str(next_day) + " "
         format = '%Y-%m-%d %H:%M'
         if self.shift == 1:
-            v = [date_shift + '16:30', date_shift + '17:00']
+            v = [date_shift + '16:31', date_shift + '17:00']
         elif self.shift == 2:
-            v = [next_day + '04:30',    next_day + '05:00']
+            v = [next_day + '04:31',    next_day + '05:00']
         else:
             raise AttributeError
         return Period(datetime.strptime(v[0], format),
@@ -141,8 +170,7 @@ class Mechanism:
         if isinstance(a, int)\
                 and isinstance(b, int):
             return a-b
-        assert "ERR"
-        return 0
+        raise TypeError
 
     def _find_max_empty_period(self, all_period, break_period: Period) -> Period:
         "return period from start_shift from atrt to stop"
@@ -196,7 +224,7 @@ class Mechanism:
                 delta_minutes[i], allowable_range[i]))
         return result
 
-    def _total_minuts_work(self, data_period) -> int:
+    def _get_total_minuts_work(self, data_period) -> int:
         "if brek more 15 minutes then count how not work"
         BREAK = 15
         total_work = 0
@@ -297,6 +325,7 @@ class Mechanism:
                     [Period(row.data_nach, row.data_kon), row.id_downtime])
         return tmp_cursor
 
+
     def _check_exist_resons(self, timestamp: datetime | None) -> int | None:
         if timestamp is None:
             return None
@@ -315,34 +344,67 @@ class Mechanism:
         result = []
         for i in range(6):
             if self.resons[i]:
-                result.append('white')
+                result.append(BgColor.gray)
                 continue
-            if self.delta_allowable_range[i] is None:
-                result.append('white')
+            if self.dt_minutes[i] is None:
+                result.append(BgColor.white)
                 continue
-            if self.delta_allowable_range[i] <= 0:
-                result.append('white')
+            if self.dt_minutes[i] <= 0:
+                result.append(BgColor.white)
                 continue
-            if self.delta_allowable_range[i] > border[i]:
-                result.append('red')
+            if self.dt_minutes[i] > border[i]:
+                result.append(BgColor.red)
                 continue
-            if self.delta_allowable_range[i] < border[i]:
-                result.append('yellow')
+            if self.dt_minutes[i] <= border[i]:
+                result.append(BgColor.yellow)
                 continue
-            result.append('white')
+            result.append(BgColor.white)
         return result
+    
+    def _get_font_cells(self):
+        result = []
+        for i in self.dt_minutes:
+            if i is None:
+                result.append(FontColor.white)
+            elif i<0:
+                result.append(FontColor.red)
+            elif i>0:
+                result.append(FontColor.green)
+            else:
+                result.append(FontColor.white)
+        return result
+
+
+    def _get_hour_and_minutes(self, time):
+        if time:
+            h = time.hour
+            m = time.minute
+            if h < 10:
+                h = '0' + str(h)
+            if m < 10:
+                m = '0' + str(m)
+            return f'{h}:{m}'
+        return ''
+
+
+    def _convert_time_to_str(self, side_times):
+        return [self._get_hour_and_minutes(time) for time in side_times]
 
     def show(self):
         print(self.colors_periods)
-        print(f"{self.delta_allowable_range=}")
+        print(f"{self.times=}")
+        print(f"{self.dt_minutes=}")
         print(f"{self.resons=}")
-        print(f"{self._total_minuts_work(self.data_period)=}")
-        print(f"{self._get_bg_cells()=}")
+        print(f"{self._get_total_minuts_work(self.data_period)=}")
+        print(f"{self.bg_cells}")
+        print(f"{self.font_cells}")
 
 
 class Kran(Mechanism):
-    def __init__(self, mech_id, date, shift):
-        super().__init__(mech_id, date, shift)
+    def __init__(self, number, date, shift):
+        self.mech_id = dict_krans[number]
+        super().__init__(self.mech_id, date, shift)
+        self.number = number
         self.data_period = self._convert_cursor_to_kran()
         call_methods(self)
         self.colors_periods = [self._get_color_period(
@@ -351,25 +413,27 @@ class Kran(Mechanism):
     def _convert_cursor_to_kran(self) -> itemsMech:
         return [Post(k, int(v[0])) for k, v in self.cursor.items()]
 
-    def _get_color_period(self, period_values: List[Post]) -> Color:
+    def _get_color_period(self, period_values: List[Post]) -> PeriodColor:
         yellow = sum([1 for i in period_values if i.value == 0])
         blue = sum([1 for i in period_values if i.value == 2])
         black = sum([1 for i in period_values if i.value in (1, 3)])
         orange = sum([1 for i in period_values if i.value == 5])
         if blue > 20 and blue > black:
-            return Color.blue
+            return PeriodColor.blue
         if black > 20 and black > blue:
-            return Color.black
+            return PeriodColor.black
         if orange > 12:
-            return Color.orange
+            return PeriodColor.orange
         if orange < 12 and yellow > 12:
-            return Color.yellow
-        return Color.red
+            return PeriodColor.yellow
+        return PeriodColor.red
 
 
 class Usm(Mechanism):
-    def __init__(self, mech_id, date, shift):
-        super().__init__(mech_id, date, shift)
+    def __init__(self, number, date, shift):
+        self.mech_id = dict_usms[number]
+        super().__init__(self.mech_id, date, shift)
+        self.number = number
         self.data_period = self._convert_cursor_to_usm()
         call_methods(self)
         self.colors_periods = [self._get_color_period(
@@ -384,14 +448,14 @@ class Usm(Mechanism):
                 result.append(Post(timestamp, 0))
         return result
 
-    def _get_color_period(self, period_values: List[Post]) -> Color:
+    def _get_color_period(self, period_values: List[Post]) -> PeriodColor:
         yellow = sum([1 for i in period_values if i.value == 0])
         blue = sum([1 for i in period_values if i.value > 0])
         if blue > 40:
-            return Color.blue
+            return PeriodColor.blue
         if yellow > 40:
-            return Color.yellow
-        return Color.red
+            return PeriodColor.yellow
+        return PeriodColor.red
 
 
 def call_methods(obj: Mechanism):
@@ -408,25 +472,248 @@ def call_methods(obj: Mechanism):
         obj.data_period, obj.work_periods)
     obj.side_time_periods = obj._get_all_side_time_periods(
         obj.split_periods)
-    obj.delta_allowable_range = obj._get_delta_allowable_range(
+    obj.dt_minutes = obj._get_delta_allowable_range(
         obj.side_time_periods)
-    obj.delta_allowable_range = obj._convert_to_allowable_range(
-        obj.delta_allowable_range)
-    obj.delta_allowable_range = obj._filter_if_more(
-        obj.delta_allowable_range, FILTER_MINUTS_MORE)
+    obj.dt_minutes = obj._convert_to_allowable_range(
+        obj.dt_minutes)
+    obj.dt_minutes = obj._filter_if_more(
+        obj.dt_minutes, FILTER_MINUTS_MORE)
+    obj.total_work_time = obj._get_total_minuts_work(obj.data_period)
+    obj.times = obj._convert_time_to_str(obj.side_time_periods)
     obj.resons = obj._get_resons()
+    obj.bg_cells = obj._get_bg_cells()
+    obj.dt_minutes = [0-x if x else x for x in obj.dt_minutes] # change +/-
+    obj.sum_dt_minutes = sum([x if x else 0 for x in obj.dt_minutes])
+    obj.str_resons = [str(x) if x else " " for x in obj._get_resons()] # convert to str
+    obj.font_cells = obj._get_font_cells()
 
+
+
+class Table:
+    text =  "SmartPort"
+    def __init__(self, Mechanisms, date_shift, shift):
+        self.date_shift = date_shift
+        self.shift = shift
+        table = self.make_table(Mechanisms)
+        html = self.make_html(table)
+
+        text = self.text.format(table=tabulate(
+            table, headers="firstrow", tablefmt="grid"))
+        html = html.format(table=tabulate(
+            table, headers="firstrow", tablefmt="html"))
+
+        # message = MIMEMultipart(
+        #     "alternative", None, [MIMEText(text), MIMEText(html, 'html')])
+        self.save_to_html(html)
+
+    def make_table(self, mechanisms: List):
+        if not mechanisms:
+            return ""
+        table = "<table>"
+        table += '<tr>'
+        for mech in mechanisms:
+            table += f"""<td class="number">  {mech.number} 
+                </br>  
+                <div class="box-line">
+                    <div class={mech.colors_periods[0].value}> . </div>
+                    <div class={mech.colors_periods[1].value}> . </div>
+                    <div class={mech.colors_periods[2].value}> . </div>
+                </div>
+            </td>"""
+            for i in range(6):
+                table += '<td>'
+                table += f'<p class={mech.font_cells[i].value}> { mech.dt_minutes[i] } </p>'
+                table += f'<div class={mech.bg_cells[i].value}> {mech.times[i]} </div>'
+                table += f'<div class=reson> {LIST_RESONS[mech.resons[i]] } </div>'
+                table += '</td>'
+            table += f'''<td class="sum"> 
+                <p class="total-dt">
+                    {mech.sum_dt_minutes} 
+                </p>
+                <div class="total-work"> 
+                    {mech.total_work_time} 
+                </div> 
+            </td>'''
+
+            table += '</tr>'
+        table += '<tr>' + '<td class=empty></td>'*7 + \
+            '<td class=total> Total </td></tr>'
+        table += '</table>'
+        return table
+
+    def save_to_html(self, table):
+        with open('mail.html', 'w') as f:
+            f.write(table)
+            f.close()
+
+    def make_html(self, table1):
+        styles = """
+        <html>
+            <head>
+            <style> 
+              table, th, td {{ 
+                border: 1px solid #999; 
+                border-collapse: collapse; 
+                vertical-align: top;
+              }}
+              th, td {{ 
+                width: 45px;
+                padding: 5px; 
+
+              }}
+              .box-line {{
+                margin-top: 10px;
+                display: flex;
+                }}
+
+              .line-blue {{
+               width: calc(100% / 3);
+                color: #104BA9;
+                background: #6E86D6;
+              }}
+              .line-red {{
+               width: calc(100% / 3);
+                color: #EF002A;
+                background: #FE7276;
+              }}
+              .line-yellow {{
+               width: calc(100% / 3);
+                color: #FFEE00;
+                background: #FFFA73;
+              }}
+              .line-orange {{
+               width: calc(100% / 3);
+                color: #FFEE00;
+                background: #FFC773;
+              }}
+              .line-black {{
+               width: calc(100% / 3);
+                color: #333;
+                background: #333;
+              }}
+
+              .bg-red {{
+                color: #555;
+                background: #F4A9A9;
+              }}
+              .bg-yellow {{
+                color: #555;
+                background: #FFFFA4;
+              }}
+              .bg-white {{
+                color: #FFF;
+                background: #FFFFFF;
+              }}
+              .bg-gray {{
+                color: #555;
+                background: #D4D4D4;
+              }}
+              .font-green {{
+                text-align: right
+                padding-top: 0;
+                padding-right: 1px;
+                text-align: right;
+                font-size: 12px;
+                color: #0ACF00;
+              }}
+              .font-red {{
+                text-align: right
+                padding-top: 0;
+                padding-right: 1px;
+                text-align: right;
+                font-size: 12px;
+                color: #FD0006;
+              }}
+              .font-white {{
+                text-align: right
+                padding-top: 0;
+                padding-right: 1px;
+                text-align: right;
+                font-size: 12px;
+                color: #FFFFFF;
+              }}
+              .reson {{
+                color: #666;
+                font-size: 10px;
+              }}
+
+              .titles {{
+                background: #F5F5F5;
+                color: #444;
+              }}
+              .number {{
+                background: #F9F9F9;
+                text-align: center;
+                font-weight: bold;
+                padding: 0px;
+                vertical-align: bottom;
+              }}
+              .sum {{
+                font-weight: bold;
+                text-align: right;
+                color: #666;
+              }}
+              .empty {{
+                border: 0px solid #fff;
+              }}
+              .total {{
+                font-weight: bold;
+                text-align: right;
+                color: #111;
+              }}
+              .total-dt {{
+                margin: 0px;
+              }}
+              .total-work {{
+                margin: 8px;
+              }}
+            </style>
+            """
+        body = f"""</head> <body>
+                <p class="title"> {self.date_shift}  {self.shift} </p>
+                <p>Позднее начало, ранее окончание по 
+                производственным периодам</p>
+                """ + table1 + """ 
+                </br>
+                <a href="https://m1.nmtport.ru/krans"> SmartPort </a>
+            </body>
+        </html>
+        """
+        return styles + body
+
+def get_list_resons_from_db() -> Dict[int, str]:
+    engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
+                           ServerName + '/' + Database + "?" + Driver)
+    sql = """
+      SELECT  [id] ,[name]
+      FROM [nmtport].[dbo].[Downtime]
+    """
+    tmp_cursor = {}
+    tmp_cursor[None] = "   "
+    with engine.connect() as con:
+        rs = con.execute(sql)
+        for row in rs:
+            tmp_cursor[row.id] = row.name
+    return tmp_cursor
 
 if __name__ == "__main__":
-    from list_mechanisms import kran, usm
-    date_shift: date = datetime.now().date() - timedelta(days=1)
+    LIST_RESONS = get_list_resons_from_db()
+    date_shift: date = datetime.now().date() - timedelta(days=7)
     shift: int = 1
-    num = 31
+    num = 9
     print(date_shift, f"{shift=} {num=}")
     print("_________________________")
 
-    k = Kran(kran[num], date_shift, shift)
-    k.show()
 
-    # u = Usm(usm[num], date_shift, shift)
+    # krans = [Kran(num, date_shift, shift) for num in (31, 35, 48, 65, 72)]
+    # Table(krans)
+
+    usms = [Usm(num, date_shift, shift) for num in range(5,14)]
+    usms = [u for u in usms if u.sum_dt_minutes != 0]
+    Table(usms, date_shift, shift)
+
+    # k = Kran(num, date_shift, shift)
+    # k.show()
+
+    # u = Usm(num, date_shift, shift)
     # u.show()
