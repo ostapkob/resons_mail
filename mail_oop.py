@@ -2,13 +2,15 @@
 from sqlalchemy import create_engine
 from rich import print
 from datetime import datetime, timedelta, date
-import sys
+# import sys
+# sys.path.insert(0, '/home/admin/nmtport')
 from typing import List, Dict,  NamedTuple
 from enum import Enum
-sys.path.insert(0, '/home/admin/nmtport')
-from tabulate import tabulate
 from list_mechanisms import krans as dict_krans, usms as dict_usms # TODO request tot DB
-# mail_pass = os.environ['YANDEX_MAIL']
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import os
+import smtplib
 
 krans_UT = [82, 47, 54, 14, 16, 11, 33, 20, 8, 22, 12, 13, 6, 26 ]
 krans_GUT = [28, 18, 1, 35, 31, 17, 39, 23, 48, 72, 65, 10]
@@ -62,12 +64,12 @@ itemsMech = List[Post]
 
 
 class Mechanism:
-
     cursor: Dict[datetime, List[float]] = {}
     data_period: itemsMech = []
     split_periods: Dict[Period, itemsMech] = {}
     side_time_periods: List[datetime | None] = []
     dt_minutes: List[int | None] = []
+    str_dt_minutes: List[str] = []
     colors_periods = []
     TOTAL_PERIOD = 20  # if work more than
     work_periods = []
@@ -88,12 +90,9 @@ class Mechanism:
         self.shift = shift
         self.cursor = self._get_cursor()
         self.cursor_resons = self._get_resons_from_db()
-        self.time_lanch = self._get_time_period(['12:00', '13:00'], ['01:00', '02:00'])
-        self.time_tea = self._get_time_period(['16:30', '17:00'], ['04:30', '05:00'])
-        self.time_shift = self._get_time_period(['08:00', '20:00'], ['20:00', '08:00'])
-        print(self.time_shift)
-        print(self.time_lanch)
-        print(self.time_tea)
+        self.time_lanch = self._get_time_lanch()
+        self.time_tea = self._get_time_tea()
+        self.time_shift = self._get_time_shift()
 
     def _get_cursor(self) -> Dict[datetime, List[float]]:
         "in kran need only value in USM need value is lever, value3 is roll"
@@ -119,23 +118,47 @@ class Mechanism:
                 tmp_cursor[row[0]] = [row[1], row[2]]
         return tmp_cursor
 
-    def _get_time_period(self, period1, period2 ) -> Period:
-        a1, b1 = period1
-        a2, b2 = period2
+    def _get_time_lanch(self) -> Period:
         next_day = self.date_shift + timedelta(days=1)
         date_shift = str(self.date_shift) + " "
         next_day = str(next_day) + " "
         format = '%Y-%m-%d %H:%M'
         if self.shift == 1:
-            v = [date_shift + a1, date_shift + b1]
+            v = [date_shift + '12:01', date_shift + '13:00']
         elif self.shift == 2:
-            v = [next_day + a2,    next_day + b2]
+            v = [next_day + '01:01',    next_day + '02:00']
         else:
             raise AttributeError
-        periods = (datetime.strptime(v[0], format),
-                  datetime.strptime(v[1], format))
-        return Period(periods[0],
-                      periods[1])
+        return Period(datetime.strptime(v[0], format),
+                      datetime.strptime(v[1], format))
+
+    def _get_time_tea(self) -> Period:
+        next_day = self.date_shift + timedelta(days=1)
+        date_shift = str(self.date_shift) + " "
+        next_day = str(next_day) + " "
+        format = '%Y-%m-%d %H:%M'
+        if self.shift == 1:
+            v = [date_shift + '16:31', date_shift + '17:00']
+        elif self.shift == 2:
+            v = [next_day + '04:31',    next_day + '05:00']
+        else:
+            raise AttributeError
+        return Period(datetime.strptime(v[0], format),
+                      datetime.strptime(v[1], format))
+
+    def _get_time_shift(self) -> Period:
+        next_day = self.date_shift + timedelta(days=1)
+        date_shift = str(self.date_shift) + " "
+        next_day = str(next_day) + " "
+        format = '%Y-%m-%d %H:%M'
+        if self.shift == 1:
+            v = [date_shift + '08:00', date_shift + '20:00']
+        elif self.shift == 2:
+            v = [date_shift + '20:00',  next_day + '08:00']
+        else:
+            raise AttributeError
+        return Period(datetime.strptime(v[0], format),
+                      datetime.strptime(v[1], format))
 
     def _get_delta_minutes(self, a, b) -> None | int:
         if a is None or b is None:
@@ -271,7 +294,6 @@ class Mechanism:
                 if timestamp > work_period.begin and timestamp <= work_period.stop:
                     split_periods[work_period].append(
                         Post(timestamp, value))
-        # print(split_periods)
         return split_periods
 
     def _get_resons_from_db(self) -> List[List]:
@@ -319,14 +341,14 @@ class Mechanism:
     def _get_bg_cells(self):
         result = []
         for i in range(6):
-            if self.resons[i]:
-                result.append(BgColor.gray)
-                continue
             if self.dt_minutes[i] is None:
                 result.append(BgColor.white)
                 continue
             if self.dt_minutes[i] <= 0:
                 result.append(BgColor.white)
+                continue
+            if self.resons[i]:
+                result.append(BgColor.gray)
                 continue
             if self.dt_minutes[i] > self.red_border[i]:
                 result.append(BgColor.red)
@@ -476,20 +498,20 @@ def call_methods(obj: Mechanism):
     obj.bg_cells = obj._get_bg_cells()
     obj.dt_minutes = [0-x if x else x for x in obj.dt_minutes] # change +/-
     obj.sum_dt_minutes = sum([x if x else 0 for x in obj.dt_minutes])
+    obj.str_dt_minutes = [str(x) if x else "0" for x in obj.dt_minutes] # convert to str
     obj.str_resons = [str(x) if x else " " for x in obj._get_resons()] # convert to str
     obj.font_cells = obj._get_font_cells()
 
 class Table:
-    text =  "SmartPort"
     titles = [ 
-        "номер",
+        "номер и статус",
         "начало смены",
         "окончание перед обедом",
         "начало после обеда",
         "окончание перед тех. перерывом",
         "начало после тех. перерыва",
         "окончание смены",
-        "общие потери и</br> отработанно (минут)",
+        "общие потери и отработанно (минут)",
     ]
     def __init__(self, mechanisms, shift):
         self.mechanisms = mechanisms
@@ -509,16 +531,15 @@ class Table:
         table += '<tr>'
         for mech in self.mechanisms:
             table += f"""<td class="number">  {mech.number} 
-                </br>  
                 <div class="box-line">
-                    <div class={mech.colors_periods[0].value}> . </div>
-                    <div class={mech.colors_periods[1].value}> . </div>
-                    <div class={mech.colors_periods[2].value}> . </div>
+                    <span class={mech.colors_periods[0].value}>..........</span>
+                    <span class={mech.colors_periods[1].value}>..........</span>
+                    <span class={mech.colors_periods[2].value}>..........</span>
                 </div>
             </td>"""
             for i in range(6):
                 table += '<td>'
-                table += f'<p class={mech.font_cells[i].value}> { mech.dt_minutes[i] } </p> '
+                table += f'<p class={mech.font_cells[i].value}> { mech.str_dt_minutes[i] } </p> '
                 table += f'<div class={mech.bg_cells[i].value}> {mech.times[i]} </div>'
                 table += f'<div class=reson> {LIST_RESONS[mech.resons[i]] } </div>'
                 table += '</td>'
@@ -538,26 +559,21 @@ class Table:
 
 
 class Form:
-    text =  "SmartPort"
     def __init__(self, data1, data2, date_shift):
         self.date_shift = date_shift
         table1 = Table(data1, 1).make_table()
         table2 = Table(data2, 2).make_table()
-        html = self.make_html(table1, table2)
+        self.html = self.make_html(table1, table2)
 
-        # text = self.text.format(table=tabulate(
-        #     table, headers="firstrow", tablefmt="grid"))
-        # html = html.format(table=tabulate(
-        #     table, headers="firstrow", tablefmt="html"))
+        self.save_to_file()
 
-        # message = MIMEMultipart(
-        #     "alternative", None, [MIMEText(text), MIMEText(html, 'html')])
-        self.save_to_html(html)
-
-    def save_to_html(self, table):
+    def save_to_file(self):
         with open('mail.html', 'w') as f:
-            f.write(table)
+            f.write(self.html)
             f.close()
+
+    def get_html(self):
+        return self.html
 
     def make_html(self, table1, table2):
         styles = """
@@ -570,41 +586,44 @@ class Form:
                 vertical-align: top;
               }
               th, td { 
-                width: 90px;
-                padding: 3px; 
-
+                width: 50px;
+                padding: 2px; 
+              }
+              .number {
+                background: #F9F9F9;
+                text-align: center;
+                font-weight: bold;
+                vertical-align: bottom;
+                width: 55px;
               }
               .box-line {
-                margin-top: 45%;
-                display: flex;
                 color: #FFF;
-                height: 5px
-                }
-
+                font-size: 6px;
+                margin-top: 2em;
+              }
               .line-blue {
-               width: 33%;
                 background: #00B0F0;
+                color: #00B0F0;
               }
               .line-red {
-               width: 33%;
                 background: #FF0000;
+                color: #FF0000;
               }
               .line-yellow {
-               width: 33%;
                 background: #FFFF00;
+                color: #FFFF00;
               }
               .line-orange {
-               width: 33%;
                 background: #F2C400;
+                color: #F2C400;
               }
               .line-black {
-               width: 33%;
                 background: #404040;
+                color: #404040;
               }
-
               .bg-red {
                 color: #555;
-                background: #fbc3c3;
+                background: #FBC3C3;
               }
               .bg-yellow {
                 color: #555;
@@ -615,53 +634,44 @@ class Form:
                 background: #FFFFFF;
               }
               .bg-gray {
-                color: #555;
-                background: #FFCBCB;
+                color: #999;
+                background: #DBDBDB;
               }
               .font-green {
-                padding-top: 0;
-                font-size: 12px;
                 color: #00BD39;
                 background: #D4FDE0;
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                text-align: center;
-                margin-left: 70px;
+                padding-top: 0;
+                font-size: 12px;
+                margin-left: 30px;
+                margin-bottom: 5px;
+                text-align: right;
               }
               .font-red {
-                padding-top: 0;
-                font-size: 12px;
                 color: #ED002F;
                 background: #FDE6EB;
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                text-align: center;
-                margin-left: 70px;
+                padding-top: 0;
+                font-size: 12px;
+                margin-left: 30px;
+                margin-bottom: 5px;
+                text-align: right;
               }
               .font-white {
-                padding-top: 0;
-                text-align: right;
                 font-size: 12px;
                 color: #FFFFFF;
+                padding-top: 0;
+                font-size: 12px;
+                margin-left: 30px;
+                margin-bottom: 5px;
+                text-align: right;
               }
               .reson {
                 color: #666;
                 font-size: 10px;
               }
-
               .titles {
                 background: #F5F5F5;
                 color: #444;
                 font-size: 12px;
-              }
-              .number {
-                background: #F9F9F9;
-                text-align: center;
-                font-weight: bold;
-                padding: 0px;
-                vertical-align: bottom;
               }
               .sum {
                 color: #666;
@@ -676,11 +686,10 @@ class Form:
               }
               .total-dt {
                 text-align: right;
-                margin: 0px;
+                margin: 0px 0px 5px 0px;
               }
               .total-work {
                 font-weight: bold;
-                margin: 8px;
               }
             </style>
             """
@@ -688,16 +697,79 @@ class Form:
                 <p class="title"> {self.date_shift}  </p>
                 <p>Позднее начало, ранее окончание по 
                 производственным периодам</p>
+                1 смена
                 """ + table1 + """ 
-                </br>
                 <a href="https://m1.nmtport.ru/krans"> SmartPort </a>
+                <div> &nbsp; </div>
+                <div> 2 смена </div>
                 """ + table2 + """ 
-                </br>
                 <a href="https://m1.nmtport.ru/krans"> SmartPort </a>
+                <div> </div>
             </body>
         </html>
         """
         return styles + body
+
+class Mail:
+    HOST = 'smtp.yandex.ru'
+    FROM = 'smartportdaly@yandex.ru'
+    mail_pass = os.environ['YANDEX_MAIL']
+    cc = [
+        # 'Vladimir.Grigoriev@nmtport.ru',
+        # 'Radion.Bespalov@nmtport.ru',
+        # 'Disp.Smen@nmtport.ru',
+        # 'Disp1.Smen@nmtport.ru',
+        # 'Oleg.Evsyukov@nmtport.ru',
+        'Alexander.Ostapchenko@nmtport.ru',
+    ]
+
+    nameTerminal = {1: "УТ-1", 2: "ГУТ-2", 3: "УОУ"}
+    addresses = {
+        1: [
+            'ostap666@yandex.ru'
+            # 'Vadim.Evsyukov@nmtport.ru',
+            # 'Maxim.Anufriev@nmtport.ru',
+            # 'Konstantin.Nikitenko@nmtport.ru',
+            # 'Petr.Gerasimenko@nmtport.ru',
+        ],
+        2: [
+            'ostap666@yandex.ru'
+            # 'Dmitry.Golynsky@nmtport.ru',
+            # 'Vyacheslav.Gaz@nmtport.ru',
+            # 'Vladimir.Speransky@nmtport.ru',
+            # 'Denis.Medvedev@nmtport.ru',
+            # 'Petr.Gerasimenko@nmtport.ru',
+        ],
+        3: [
+            'ostap666@yandex.ru'
+            # 'Petr.Gerasimenko@nmtport.ru',
+            # 'Fedor.Tormasov@nmtport.ru',
+            # 'Aleksey.Makogon@nmtport.ru',
+            # 'shift.engineer@nmtport.ru'
+        ]
+    }
+    def __init__(self, html: str, division: int):
+
+        text = "У Вас отключена поддержка HTML таблиц"
+        part1 = MIMEText(text, 'plain')
+        part2 = MIMEText(html, 'html')
+
+        message = MIMEMultipart('alternative')
+        message['Subject'] = "Простои по " + self.nameTerminal[division]
+        message['From'] = self.FROM
+        message['To'] = ", ".join(self.addresses[division])
+        message['Cc'] = ', '.join(self.cc)
+
+        message.attach(part1)
+        message.attach(part2)
+        recipients = self.addresses[division] + self.cc
+
+        # server = smtplib.SMTP_SSL(self.HOST, 465)
+        # server.ehlo()
+        # server.login(self.FROM, self.mail_pass)
+        # server.sendmail(self.FROM, recipients, message.as_string())
+        # server.quit()
+
 
 def get_list_resons_from_db() -> Dict[int, str]:
     engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
@@ -722,10 +794,11 @@ if __name__ == "__main__":
     num = 11
     print(date_shift, f"{shift=} {num=}")
     print("_________________________")
+    # k = Kran(num, date_shift, shift)
+    # k.show()
 
-    # krans = [Kran(num, date_shift, shift) for num in krans_UT]
-    # krans = [k for k in krans if k.sum_dt_minutes != 0]
-    # Table(krans, date_shift, shift)
+    # u = Usm(num, date_shift, shift)
+    # u.show()
 
     # usms = [Usm(num, date_shift, 1) for num in range(5,14)]
     # data1 = [u for u in usms if u.sum_dt_minutes != 0]
@@ -733,10 +806,16 @@ if __name__ == "__main__":
     # usms = [Usm(num, date_shift, 2) for num in range(5,14)]
     # data2 = [u for u in usms if u.sum_dt_minutes != 0]
 
-    # form = Form(data1, data2, date_shift)
+    # form = Form(data1, data2, date_shift).get_html()
+    # Mail(form, 3)
 
-    # k = Kran(num, date_shift, shift)
-    # k.show()
 
-    u = Usm(num, date_shift, shift)
-    u.show()
+    krans = [Kran(num, date_shift, 1) for num in krans_UT]
+    data1 = [k for k in krans if k.sum_dt_minutes != 0]
+
+    krans = [Kran(num, date_shift, 2) for num in krans_UT]
+    data2 = [k for k in krans if k.sum_dt_minutes != 0]
+
+    form = Form(data1, data2, date_shift).get_html()
+    Mail(form, 1)
+
