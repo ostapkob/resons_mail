@@ -11,11 +11,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 import smtplib
+import time
 
 krans_UT = [82, 47, 54, 14, 16, 11, 33, 20, 8, 22, 12, 13, 6, 26 ]
 krans_GUT = [28, 18, 1, 35, 31, 17, 39, 23, 48, 72, 65, 10]
 HOURS = 10
-FILTER_MINUTS_MORE = 40
+FILTER_MINUTS_MORE = 50
 ServerName = "192.168.99.106"
 Database = "nmtport"
 UserPwd = "ubuntu:Port2020"
@@ -79,7 +80,7 @@ class Mechanism:
     times: List[str] = []
     font_cells: List[FontColor] = []
     sum_dt_minutes: int
-    total_work_time: int
+    total_work_time: float
     allowable_range: List[int]
     red_border: List[int]
 
@@ -90,6 +91,7 @@ class Mechanism:
         self.shift = shift
         self.cursor = self._get_cursor()
         self.cursor_resons = self._get_resons_from_db()
+        #can't use one function because condition different 
         self.time_lanch = self._get_time_lanch()
         self.time_tea = self._get_time_tea()
         self.time_shift = self._get_time_shift()
@@ -98,6 +100,7 @@ class Mechanism:
         "in kran need only value in USM need value is lever, value3 is roll"
         engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
                                ServerName + '/' + Database + "?" + Driver)
+        # not use f'string because bad sea values
         sql = """
         SELECT TOP (1000)
              dateadd(hour, """ + str(HOURS) + """, [timestamp]) as time
@@ -119,6 +122,7 @@ class Mechanism:
         return tmp_cursor
 
     def _get_time_lanch(self) -> Period:
+        """start and stop lanch"""
         next_day = self.date_shift + timedelta(days=1)
         date_shift = str(self.date_shift) + " "
         next_day = str(next_day) + " "
@@ -133,6 +137,7 @@ class Mechanism:
                       datetime.strptime(v[1], format))
 
     def _get_time_tea(self) -> Period:
+        """start and stop tea"""
         next_day = self.date_shift + timedelta(days=1)
         date_shift = str(self.date_shift) + " "
         next_day = str(next_day) + " "
@@ -147,6 +152,7 @@ class Mechanism:
                       datetime.strptime(v[1], format))
 
     def _get_time_shift(self) -> Period:
+        """start and stop shift"""
         next_day = self.date_shift + timedelta(days=1)
         date_shift = str(self.date_shift) + " "
         next_day = str(next_day) + " "
@@ -161,6 +167,7 @@ class Mechanism:
                       datetime.strptime(v[1], format))
 
     def _get_delta_minutes(self, a, b) -> None | int:
+        """a-b"""
         if a is None or b is None:
             return None
         if isinstance(a, datetime)\
@@ -172,7 +179,7 @@ class Mechanism:
         raise TypeError
 
     def _find_max_empty_period(self, all_period, break_period: Period) -> Period:
-        "return period from start_shift from atrt to stop"
+        """function starting from middle break period and find first not empty values right and left"""
         dt = self._get_delta_minutes(break_period.stop, break_period.begin)
         if dt is None:
             return break_period
@@ -198,6 +205,7 @@ class Mechanism:
         return Period(begin, stop)
 
     def _get_delta_float_minutes(self, a: datetime, b: datetime) -> float:
+        """need all number"""
         if isinstance(a, datetime)\
                 and isinstance(b, datetime):
             return (a - b).total_seconds()/60
@@ -205,6 +213,7 @@ class Mechanism:
         return 0.0
 
     def _filter_if_more(self, items: List[int | None], border: int) -> List[int | None]:
+        """if mechanism start/stop earlier"""
         new_items = []
         for i in items:
             if i is None:
@@ -238,6 +247,7 @@ class Mechanism:
         return int(total_work)
 
     def _get_delta_allowable_range(self, side_time_periods: List[datetime | None]) -> List[int | None]:
+        """return delta time start/stop mechanism"""
         list_delta_minutes: List[int | None] = [
 
             self._get_delta_minutes(
@@ -253,6 +263,7 @@ class Mechanism:
         return list_delta_minutes
 
     def _get_all_side_time_periods(self, periods) -> List[datetime | None]:
+        """return 6 timestamp when mech stop and start by periods"""
         result = []
         for i in periods.values():
             tmp = self._get_side_time_periods(i)
@@ -261,6 +272,7 @@ class Mechanism:
         return result
 
     def _get_side_time_periods(self, period_values: List[Post]) -> List[datetime | None]:
+        "return [first, last] not empty values"
         if self._sum_period(period_values) > self.TOTAL_PERIOD:  # TODO if only move ?
             return [
                 self._get_first_not_empty_value(period_values),
@@ -282,9 +294,11 @@ class Mechanism:
         return None
 
     def _sum_period(self, period_values: List[Post]) -> int:
+        """return sum turns for kran and work minutes fo usm"""
         return sum([1 for i in period_values if i.value > 0])
 
     def _split_by_periods(self, data_period, work_periods) -> Dict[Period, List[Post]]:
+        """return 3 periods start-lanch lanch-tea tea-stop"""
         split_periods: Dict[Period, List[Post]] = {}
         for work_period in work_periods:
             split_periods[work_period] = []
@@ -326,6 +340,7 @@ class Mechanism:
 
 
     def _check_exist_resons(self, timestamp: datetime | None) -> int | None:
+        """if timestamp in reson's period"""
         if timestamp is None:
             return None
         for [begin, stop], reson in self.cursor_resons:
@@ -344,7 +359,7 @@ class Mechanism:
             if self.dt_minutes[i] is None:
                 result.append(BgColor.white)
                 continue
-            if self.dt_minutes[i] <= 0:
+            if self.dt_minutes[i] <= 0: #normal
                 result.append(BgColor.white)
                 continue
             if self.resons[i]:
@@ -360,6 +375,7 @@ class Mechanism:
         return result
     
     def _get_font_cells(self):
+        """if value<0 red if value>0 green"""
         result = []
         for i in self.dt_minutes:
             if i is None:
@@ -374,6 +390,7 @@ class Mechanism:
 
 
     def _get_hour_and_minutes(self, time):
+        "convert 8,1 to 08:01"
         if time:
             h = time.hour
             m = time.minute
@@ -492,7 +509,7 @@ def call_methods(obj: Mechanism):
         obj.dt_minutes)
     obj.dt_minutes = obj._filter_if_more(
         obj.dt_minutes, FILTER_MINUTS_MORE)
-    obj.total_work_time = obj._get_total_minuts_work(obj.data_period)
+    obj.total_work_time = round(obj._get_total_minuts_work(obj.data_period)/60, 1)
     obj.times = obj._convert_time_to_str(obj.side_time_periods)
     obj.resons = obj._get_resons()
     obj.bg_cells = obj._get_bg_cells()
@@ -511,9 +528,10 @@ class Table:
         "окончание перед тех. перерывом",
         "начало после тех. перерыва",
         "окончание смены",
-        "общие потери и отработанно (минут)",
+        "общие потери и отработанно",
     ]
-    def __init__(self, mechanisms, shift):
+    def __init__(self, mechanisms, shift, LIST_RESONS):
+        self.LIST_RESONS=LIST_RESONS
         self.mechanisms = mechanisms
         self.shift = shift
         self.total_sum_dt_minutes = sum([m.sum_dt_minutes for m in self.mechanisms])
@@ -531,24 +549,26 @@ class Table:
         table += '<tr>'
         for mech in self.mechanisms:
             table += f"""<td class="number">  {mech.number} 
-                <div class="box-line">
-                    <span class={mech.colors_periods[0].value}>..........</span>
-                    <span class={mech.colors_periods[1].value}>..........</span>
-                    <span class={mech.colors_periods[2].value}>..........</span>
-                </div>
+                <table class="box-line">
+                    <tr>
+                        <td class={mech.colors_periods[0].value}>.</td>
+                        <td class={mech.colors_periods[1].value}>.</td>
+                        <td class={mech.colors_periods[2].value}>.</td>
+                    </tr>
+                </table>
             </td>"""
             for i in range(6):
                 table += '<td>'
                 table += f'<p class={mech.font_cells[i].value}> { mech.str_dt_minutes[i] } </p> '
                 table += f'<div class={mech.bg_cells[i].value}> {mech.times[i]} </div>'
-                table += f'<div class=reson> {LIST_RESONS[mech.resons[i]] } </div>'
+                table += f'<div class=reson> {self.LIST_RESONS[mech.resons[i]] } </div>'
                 table += '</td>'
             table += f'''<td class="sum"> 
                 <p class="total-dt">
-                    {mech.sum_dt_minutes} 
+                    {mech.sum_dt_minutes} мин.
                 </p>
                 <div class="total-work"> 
-                    {mech.total_work_time} 
+                    {mech.total_work_time}ч. 
                 </div> 
             </td>'''
             table += '</tr>'
@@ -559,16 +579,17 @@ class Table:
 
 
 class Form:
-    def __init__(self, data1, data2, date_shift):
+    links = {1: "krans", 2: "krans", 3: "usm"}
+    def __init__(self, data1, data2, date_shift, division, LIST_RESONS):
         self.date_shift = date_shift
-        table1 = Table(data1, 1).make_table()
-        table2 = Table(data2, 2).make_table()
+        self.division = division
+        table1 = Table(data1, 1, LIST_RESONS).make_table()
+        table2 = Table(data2, 2, LIST_RESONS).make_table()
         self.html = self.make_html(table1, table2)
-
         self.save_to_file()
 
     def save_to_file(self):
-        with open('mail.html', 'w') as f:
+        with open(str(self.division)+'mail.html', 'w') as f:
             f.write(self.html)
             f.close()
 
@@ -576,6 +597,9 @@ class Form:
         return self.html
 
     def make_html(self, table1, table2):
+        date = self.date_shift.strftime("%d.%m.%Y")
+        link1 = f'<a href="https://m1.nmtport.ru/{self.links[self.division]}/{date}/1"> Подробнее </a>'
+        link2 = f'<a href="https://m1.nmtport.ru/{self.links[self.division]}/{date}/2"> Подробнее </a>'
         styles = """
         <html>
             <head>
@@ -586,20 +610,25 @@ class Form:
                 vertical-align: top;
               }
               th, td { 
-                width: 50px;
+                width: 125px;
                 padding: 2px; 
               }
+              
               .number {
                 background: #F9F9F9;
                 text-align: center;
                 font-weight: bold;
                 vertical-align: bottom;
-                width: 55px;
+                width: 95px;
+                margin-bottom: 2em;
               }
               .box-line {
                 color: #FFF;
-                font-size: 6px;
-                margin-top: 2em;
+                font-size: 2px;
+                margin-top: 2px;
+                height: 1em;
+                padding: 0px;
+
               }
               .line-blue {
                 background: #00B0F0;
@@ -642,7 +671,7 @@ class Form:
                 background: #D4FDE0;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 30px;
+                margin-left: 90px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -651,7 +680,7 @@ class Form:
                 background: #FDE6EB;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 30px;
+                margin-left: 90px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -660,7 +689,7 @@ class Form:
                 color: #FFFFFF;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 30px;
+                margin-left: 90px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -698,12 +727,10 @@ class Form:
                 <p>Позднее начало, ранее окончание по 
                 производственным периодам</p>
                 1 смена
-                """ + table1 + """ 
-                <a href="https://m1.nmtport.ru/krans"> SmartPort </a>
+                """ + table1 + link1 + """ 
                 <div> &nbsp; </div>
                 <div> 2 смена </div>
-                """ + table2 + """ 
-                <a href="https://m1.nmtport.ru/krans"> SmartPort </a>
+                """ + table2 + link2 +""" 
                 <div> </div>
             </body>
         </html>
@@ -726,14 +753,14 @@ class Mail:
     nameTerminal = {1: "УТ-1", 2: "ГУТ-2", 3: "УОУ"}
     addresses = {
         1: [
-            'ostap666@yandex.ru'
+            'ostap666@yandex.ru',
             # 'Vadim.Evsyukov@nmtport.ru',
             # 'Maxim.Anufriev@nmtport.ru',
             # 'Konstantin.Nikitenko@nmtport.ru',
             # 'Petr.Gerasimenko@nmtport.ru',
         ],
         2: [
-            'ostap666@yandex.ru'
+            'ostap666@yandex.ru',
             # 'Dmitry.Golynsky@nmtport.ru',
             # 'Vyacheslav.Gaz@nmtport.ru',
             # 'Vladimir.Speransky@nmtport.ru',
@@ -741,7 +768,7 @@ class Mail:
             # 'Petr.Gerasimenko@nmtport.ru',
         ],
         3: [
-            'ostap666@yandex.ru'
+            'ostap666@yandex.ru',
             # 'Petr.Gerasimenko@nmtport.ru',
             # 'Fedor.Tormasov@nmtport.ru',
             # 'Aleksey.Makogon@nmtport.ru',
@@ -749,26 +776,30 @@ class Mail:
         ]
     }
     def __init__(self, html: str, division: int):
+        self.html = html
+        self.division = division
 
+    def sent(self):
         text = "У Вас отключена поддержка HTML таблиц"
         part1 = MIMEText(text, 'plain')
-        part2 = MIMEText(html, 'html')
+        part2 = MIMEText(self.html, 'html')
 
         message = MIMEMultipart('alternative')
-        message['Subject'] = "Простои по " + self.nameTerminal[division]
+        message['Subject'] = "Простои по " + self.nameTerminal[self.division]
         message['From'] = self.FROM
-        message['To'] = ", ".join(self.addresses[division])
+        message['To'] = ", ".join(self.addresses[self.division])
         message['Cc'] = ', '.join(self.cc)
 
         message.attach(part1)
         message.attach(part2)
-        recipients = self.addresses[division] + self.cc
+        recipients = self.addresses[self.division] + self.cc
 
-        # server = smtplib.SMTP_SSL(self.HOST, 465)
-        # server.ehlo()
-        # server.login(self.FROM, self.mail_pass)
-        # server.sendmail(self.FROM, recipients, message.as_string())
-        # server.quit()
+        server = smtplib.SMTP_SSL(self.HOST, 465)
+        server.ehlo()
+        server.login(self.FROM, self.mail_pass)
+        server.sendmail(self.FROM, recipients, message.as_string())
+        server.quit()
+
 
 
 def get_list_resons_from_db() -> Dict[int, str]:
@@ -786,36 +817,46 @@ def get_list_resons_from_db() -> Dict[int, str]:
             tmp_cursor[row.id] = row.name
     return tmp_cursor
 
-if __name__ == "__main__":
+def every_day(date_shift):
     LIST_RESONS = get_list_resons_from_db()
-    date_shift: date = datetime.now().date() - timedelta(days=1)
-    shift: int = 2
-    # num = 47
-    num = 11
-    print(date_shift, f"{shift=} {num=}")
-    print("_________________________")
+    LIST_RESONS = {k: v.lower() for k,v in LIST_RESONS.items()}
+    mech_divisions = {
+        1: krans_UT,
+        2: krans_GUT,
+        3: list(range(5,14)),
+    }
+
+    mech_class = {
+        1: Kran,
+        2: Kran,
+        3: Usm,
+    }
+    for i in range(1,4):
+        mechanisms = [mech_class[i](num, date_shift, 1) for num in  (mech_divisions[i])]
+        data1 = [m for m in mechanisms if m.sum_dt_minutes != 0]
+        mechanisms = [mech_class[i](num, date_shift, 2) for num in  (mech_divisions[i])]
+        data2 = [m for m in mechanisms if m.sum_dt_minutes != 0]
+        form = Form(data1, data2, date_shift, i, LIST_RESONS).get_html()
+        mailer = Mail(form, i)
+        mailer.sent()
+
+
+if __name__ == "__main__":
+
+    while True:
+        hour = datetime.now().hour
+        minute = datetime.now().minute
+        if hour==16 and minute==55:
+            date_shift = datetime.now().date() - timedelta(days=1)
+            print(datetime.now())
+            every_day(date_shift)
+        time.sleep(30)
+
+    # date_shift = datetime.now().date() - timedelta(days=1)
+    # every_day(date_shift)
+
     # k = Kran(num, date_shift, shift)
     # k.show()
 
     # u = Usm(num, date_shift, shift)
     # u.show()
-
-    # usms = [Usm(num, date_shift, 1) for num in range(5,14)]
-    # data1 = [u for u in usms if u.sum_dt_minutes != 0]
-
-    # usms = [Usm(num, date_shift, 2) for num in range(5,14)]
-    # data2 = [u for u in usms if u.sum_dt_minutes != 0]
-
-    # form = Form(data1, data2, date_shift).get_html()
-    # Mail(form, 3)
-
-
-    krans = [Kran(num, date_shift, 1) for num in krans_UT]
-    data1 = [k for k in krans if k.sum_dt_minutes != 0]
-
-    krans = [Kran(num, date_shift, 2) for num in krans_UT]
-    data2 = [k for k in krans if k.sum_dt_minutes != 0]
-
-    form = Form(data1, data2, date_shift).get_html()
-    Mail(form, 1)
-
