@@ -75,7 +75,6 @@ class Mechanism:
     TOTAL_PERIOD = 20  # if work more than
     work_periods = []
     resons: List[int | None] = []
-    str_resons: List[str] = []
     bg_cells: List[BgColor] = []
     times: List[str] = []
     font_cells: List[FontColor] = []
@@ -209,8 +208,8 @@ class Mechanism:
         if isinstance(a, datetime)\
                 and isinstance(b, datetime):
             return (a - b).total_seconds()/60
-        assert "types not datetime"
-        return 0.0
+        # raise TypeError, "types not datetime"
+        # return 0.0
 
     def _filter_if_more(self, items: List[int | None], border: int) -> List[int | None]:
         """if mechanism start/stop earlier"""
@@ -225,11 +224,8 @@ class Mechanism:
         return new_items
 
     def _convert_to_allowable_range(self, delta_minutes: List[int | None]) -> List[int | None]:
-        result = []
-        for i in range(6):
-            result.append(self._get_delta_minutes(
-                delta_minutes[i], self.allowable_range[i]))
-        return result
+        assert len(delta_minutes) == len (self.allowable_range)
+        return [self._get_delta_minutes(d, a) for d,a in zip(delta_minutes, self.allowable_range)]
 
     def _get_total_minuts_work(self, data_period) -> int:
         "if brek more 15 minutes then count how not work"
@@ -355,6 +351,7 @@ class Mechanism:
 
     def _get_bg_cells(self):
         result = []
+        assert len(self.dt_minutes) == len (self.red_border)
         for i in range(6):
             if self.dt_minutes[i] is None:
                 result.append(BgColor.white)
@@ -405,16 +402,23 @@ class Mechanism:
     def _convert_time_to_str(self, side_times):
         return [self._get_hour_and_minutes(time) for time in side_times]
 
-    def plus_minute(self, dt_minutes) -> List[int | None]:
+    def _plus_minute(self, dt_minutes) -> List[int | None]:
         """because minutes have adding second"""
         diff = [0,1,0,1,0,1]
-        result = []
+        result=[]
         for i in range(6):
             if dt_minutes[i]:
                 result.append(dt_minutes[i]+diff[i])
             else:
                 result.append(None)
         return result
+
+    def _clean_color_cell(self):
+        assert len(self.dt_minutes) == len(self.resons) == len(self.times)
+        for en, dt in enumerate(self.dt_minutes):
+            if dt is None or dt>= 0:
+                self.resons[en] = None
+                self.times[en] = ""
 
     def show(self):
         print(f"{self.times=}")
@@ -504,7 +508,7 @@ def call_methods(obj: Mechanism):
         obj.split_periods)
     obj.dt_minutes = obj._get_delta_allowable_range(
         obj.side_time_periods)
-    obj.dt_minutes = obj.plus_minute(obj.dt_minutes)
+    obj.dt_minutes = obj._plus_minute(obj.dt_minutes)
     obj.dt_minutes = obj._convert_to_allowable_range(
         obj.dt_minutes)
     obj.dt_minutes = obj._filter_if_more(
@@ -516,8 +520,8 @@ def call_methods(obj: Mechanism):
     obj.dt_minutes = [0-x if x else x for x in obj.dt_minutes] # change +/-
     obj.sum_dt_minutes = sum([x if x else 0 for x in obj.dt_minutes])
     obj.str_dt_minutes = [str(x) if x else "0" for x in obj.dt_minutes] # convert to str
-    obj.str_resons = [str(x) if x else " " for x in obj._get_resons()] # convert to str
     obj.font_cells = obj._get_font_cells()
+    obj._clean_color_cell()
 
 class Table:
     titles = [ 
@@ -528,7 +532,7 @@ class Table:
         "окончание перед тех. перерывом",
         "начало после тех. перерыва",
         "окончание смены",
-        "общие потери и отработанно",
+        "общие потери и отработанно времени",
     ]
     def __init__(self, mechanisms, shift, LIST_RESONS):
         self.LIST_RESONS=LIST_RESONS
@@ -610,7 +614,7 @@ class Form:
                 vertical-align: top;
               }
               th, td { 
-                width: 125px;
+                width: 135px;
                 padding: 2px; 
               }
               
@@ -619,7 +623,7 @@ class Form:
                 text-align: center;
                 font-weight: bold;
                 vertical-align: bottom;
-                width: 95px;
+                width: 100;
                 margin-bottom: 2em;
               }
               .box-line {
@@ -671,7 +675,7 @@ class Form:
                 background: #D4FDE0;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 90px;
+                margin-left: 95px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -680,7 +684,7 @@ class Form:
                 background: #FDE6EB;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 90px;
+                margin-left: 95px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -689,13 +693,13 @@ class Form:
                 color: #FFFFFF;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 90px;
+                margin-left: 95px;
                 margin-bottom: 5px;
                 text-align: right;
               }
               .reson {
                 color: #666;
-                font-size: 10px;
+                font-size: 12px;
               }
               .titles {
                 background: #F5F5F5;
@@ -742,37 +746,39 @@ class Mail:
     FROM = 'smartportdaly@yandex.ru'
     mail_pass = os.environ['YANDEX_MAIL']
     cc = [
-        # 'Vladimir.Grigoriev@nmtport.ru',
-        # 'Radion.Bespalov@nmtport.ru',
-        # 'Disp.Smen@nmtport.ru',
-        # 'Disp1.Smen@nmtport.ru',
-        # 'Oleg.Evsyukov@nmtport.ru',
+        'Vladimir.Grigoriev@nmtport.ru',
+        'Radion.Bespalov@nmtport.ru',
+        'Disp.Smen@nmtport.ru',
+        'Disp1.Smen@nmtport.ru',
+        'Oleg.Evsyukov@nmtport.ru',
         'Alexander.Ostapchenko@nmtport.ru',
     ]
 
     nameTerminal = {1: "УТ-1", 2: "ГУТ-2", 3: "УОУ"}
     addresses = {
         1: [
-            'ostap666@yandex.ru',
-            # 'Vadim.Evsyukov@nmtport.ru',
-            # 'Maxim.Anufriev@nmtport.ru',
-            # 'Konstantin.Nikitenko@nmtport.ru',
-            # 'Petr.Gerasimenko@nmtport.ru',
+            'Vadim.Evsyukov@nmtport.ru',
+            'Maxim.Anufriev@nmtport.ru',
+            'Konstantin.Nikitenko@nmtport.ru',
+            'Petr.Gerasimenko@nmtport.ru',
+            'ostapkob@gmail.com',
         ],
         2: [
-            'ostap666@yandex.ru',
-            # 'Dmitry.Golynsky@nmtport.ru',
-            # 'Vyacheslav.Gaz@nmtport.ru',
-            # 'Vladimir.Speransky@nmtport.ru',
-            # 'Denis.Medvedev@nmtport.ru',
-            # 'Petr.Gerasimenko@nmtport.ru',
+            # 'ostap666@yandex.ru',
+            'Dmitry.Golynsky@nmtport.ru',
+            'Vyacheslav.Gaz@nmtport.ru',
+            'Vladimir.Speransky@nmtport.ru',
+            'Denis.Medvedev@nmtport.ru',
+            'Petr.Gerasimenko@nmtport.ru',
+            'ostapkob@gmail.com',
         ],
         3: [
             'ostap666@yandex.ru',
-            # 'Petr.Gerasimenko@nmtport.ru',
-            # 'Fedor.Tormasov@nmtport.ru',
-            # 'Aleksey.Makogon@nmtport.ru',
-            # 'shift.engineer@nmtport.ru'
+            'Petr.Gerasimenko@nmtport.ru',
+            'Fedor.Tormasov@nmtport.ru',
+            'Aleksey.Makogon@nmtport.ru',
+            'shift.engineer@nmtport.ru'
+            'ostapkob@gmail.com',
         ]
     }
     def __init__(self, html: str, division: int):
@@ -846,7 +852,7 @@ if __name__ == "__main__":
     while True:
         hour = datetime.now().hour
         minute = datetime.now().minute
-        if hour==16 and minute==55:
+        if hour==10 and minute==0:
             date_shift = datetime.now().date() - timedelta(days=1)
             print(datetime.now())
             every_day(date_shift)
@@ -855,7 +861,8 @@ if __name__ == "__main__":
     # date_shift = datetime.now().date() - timedelta(days=1)
     # every_day(date_shift)
 
-    # k = Kran(num, date_shift, shift)
+    # date_shift = datetime.now().date() - timedelta(days=1)
+    # k = Kran(26, date_shift, 2)
     # k.show()
 
     # u = Usm(num, date_shift, shift)
