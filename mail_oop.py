@@ -450,15 +450,24 @@ class Kran(Mechanism):
         blue = sum([1 for i in period_values if i.value == 2])
         black = sum([1 for i in period_values if i.value in (1, 3)])
         orange = sum([1 for i in period_values if i.value == 5])
+        red = 7
+        color = {
+            yellow: PeriodColor.yellow,
+            blue: PeriodColor.blue,
+            black: PeriodColor.black,
+            orange: PeriodColor.orange,
+            red: PeriodColor.red,
+             }
+        more_often = color[max([k for k in color.keys() ])]
         if blue > 20 and blue > black:
             return PeriodColor.blue
         if black > 20 and black > blue:
             return PeriodColor.black
-        if orange > 12:
+        if orange >= 10:
             return PeriodColor.orange
-        if orange < 12 and yellow > 12:
+        if orange < 10 and yellow > 10:
             return PeriodColor.yellow
-        return PeriodColor.red
+        return more_often
 
 
 class Usm(Mechanism):
@@ -550,8 +559,8 @@ class Table:
             table += f'<td> {title} </td>'
         table += '</tr>'
 
-        table += '<tr>'
         for mech in self.mechanisms:
+            table += '<tr>'
             table += f"""<td class="number">  {mech.number} 
                 <table class="box-line">
                     <tr>
@@ -684,7 +693,7 @@ class Form:
                 background: #FDE6EB;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 95px;
+                margin-left: 85px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -693,7 +702,7 @@ class Form:
                 color: #FFFFFF;
                 padding-top: 0;
                 font-size: 12px;
-                margin-left: 95px;
+                margin-left: 85px;
                 margin-bottom: 5px;
                 text-align: right;
               }
@@ -761,7 +770,6 @@ class Mail:
             'Maxim.Anufriev@nmtport.ru',
             'Konstantin.Nikitenko@nmtport.ru',
             'Petr.Gerasimenko@nmtport.ru',
-            'ostapkob@gmail.com',
         ],
         2: [
             # 'ostap666@yandex.ru',
@@ -770,15 +778,12 @@ class Mail:
             'Vladimir.Speransky@nmtport.ru',
             'Denis.Medvedev@nmtport.ru',
             'Petr.Gerasimenko@nmtport.ru',
-            'ostapkob@gmail.com',
         ],
         3: [
-            'ostap666@yandex.ru',
             'Petr.Gerasimenko@nmtport.ru',
             'Fedor.Tormasov@nmtport.ru',
             'Aleksey.Makogon@nmtport.ru',
-            'shift.engineer@nmtport.ru'
-            'ostapkob@gmail.com',
+            'shift.engineer@nmtport.ru',
         ]
     }
     def __init__(self, html: str, division: int):
@@ -852,17 +857,17 @@ if __name__ == "__main__":
     while True:
         hour = datetime.now().hour
         minute = datetime.now().minute
-        if hour==10 and minute==0:
+        if hour==10 and minute==10:
             date_shift = datetime.now().date() - timedelta(days=1)
             print(datetime.now())
             every_day(date_shift)
         time.sleep(30)
 
-    # date_shift = datetime.now().date() - timedelta(days=1)
+    # date_shift = datetime.now().date() - timedelta(days=2)
     # every_day(date_shift)
 
-    # date_shift = datetime.now().date() - timedelta(days=1)
-    # k = Kran(26, date_shift, 2)
+    # date_shift = datetime.now().date() - timedelta(days=2)
+    # k = Kran(31, date_shift, 2)
     # k.show()
 
     # u = Usm(num, date_shift, shift)
