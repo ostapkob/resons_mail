@@ -81,6 +81,7 @@ class Mechanism:
     sum_dt_minutes: int
     total_work_time: float
     allowable_range: List[int]
+    diff_dt_minutes: List[int]
     red_border: List[int]
 
     def __init__(self, mech_id: int, date_shift: date, shift: int):
@@ -208,8 +209,6 @@ class Mechanism:
         if isinstance(a, datetime)\
                 and isinstance(b, datetime):
             return (a - b).total_seconds()/60
-        # raise TypeError, "types not datetime"
-        # return 0.0
 
     def _filter_if_more(self, items: List[int | None], border: int) -> List[int | None]:
         """if mechanism start/stop earlier"""
@@ -340,8 +339,9 @@ class Mechanism:
         if timestamp is None:
             return None
         for [begin, stop], reson in self.cursor_resons:
-            begin -= timedelta(minutes=2)
-            stop += timedelta(minutes=2)
+            begin -= timedelta(minutes=10)
+            stop += timedelta(minutes=10)
+            # print(begin, stop, timestamp, sep="|")
             if timestamp > begin and timestamp < stop:
                 return reson
         return None
@@ -404,11 +404,10 @@ class Mechanism:
 
     def _plus_minute(self, dt_minutes) -> List[int | None]:
         """because minutes have adding second"""
-        diff = [0,1,0,1,0,1]
         result=[]
         for i in range(6):
             if dt_minutes[i]:
-                result.append(dt_minutes[i]+diff[i])
+                result.append(dt_minutes[i]+self.diff_dt_minutes[i])
             else:
                 result.append(None)
         return result
@@ -423,18 +422,19 @@ class Mechanism:
     def show(self):
         print(f"{self.times=}")
         print(f"{self.dt_minutes=}")
-        print(self.colors_periods)
-        # print(f"{self.resons=}")
+        # print(self.colors_periods)
+        print(f"{self.resons=}")
         # print(f"{self._get_total_minuts_work(self.data_period)=}")
         # print(f"{self.bg_cells}")
         # print(f"{self.font_cells}")
 
 
 class Kran(Mechanism):
+    diff_dt_minutes = [0, 0, 0, 0, 0, 1]
+    allowable_range = [20, 0, 0, 0, 0, 20]
+    red_border = [10, 5, 5, 5, 5, 10]
     def __init__(self, number, date, shift):
         self.mech_id = dict_krans[number]
-        self.allowable_range = [20, 0, 0, 0, 0, 20]
-        self.red_border = [10, 5, 5, 5, 5, 10]
         super().__init__(self.mech_id, date, shift)
         self.number = number
         self.data_period = self._convert_cursor_to_kran()
@@ -471,10 +471,11 @@ class Kran(Mechanism):
 
 
 class Usm(Mechanism):
+    diff_dt_minutes = [0, 0, 0, 0, 0, 1] # postible this need del
+    allowable_range = [20, 0, 0, 0, 0, 30]
+    red_border = [10, 5, 5, 5, 5, 10] # after
     def __init__(self, number, date, shift):
         self.mech_id = dict_usms[number]
-        self.allowable_range = [20, 0, 0, 0, 0, 30]
-        self.red_border = [10, 5, 5, 5, 5, 10] # after
         super().__init__(self.mech_id, date, shift)
         self.number = number
         self.data_period = self._convert_cursor_to_usm()
@@ -502,6 +503,7 @@ class Usm(Mechanism):
 
 
 def call_methods(obj: Mechanism):
+    """first kran and usm must convert cursor after this methods"""
     break_lanch = obj._find_max_empty_period(
         obj.data_period, obj.time_lanch)
     break_tea = obj._find_max_empty_period(
@@ -660,8 +662,8 @@ class Form:
                 color: #F2C400;
               }
               .line-black {
-                background: #404040;
-                color: #404040;
+                background: #666;
+                color: #666;
               }
               .bg-red {
                 color: #555;
@@ -857,7 +859,7 @@ if __name__ == "__main__":
     while True:
         hour = datetime.now().hour
         minute = datetime.now().minute
-        if hour==10 and minute==10:
+        if hour==10 and minute==0:
             date_shift = datetime.now().date() - timedelta(days=1)
             print(datetime.now())
             every_day(date_shift)
@@ -866,9 +868,10 @@ if __name__ == "__main__":
     # date_shift = datetime.now().date() - timedelta(days=2)
     # every_day(date_shift)
 
-    # date_shift = datetime.now().date() - timedelta(days=2)
-    # k = Kran(31, date_shift, 2)
+    # date_shift = datetime.now().date() - timedelta(days=1)
+    # k = Kran(35, date_shift, 1)
     # k.show()
 
-    # u = Usm(num, date_shift, shift)
-    # u.show()
+    # date_shift = datetime.now().date() - timedelta(days=1)
+    # k = Usm(13, date_shift, 1)
+    # k.show()
