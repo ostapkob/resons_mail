@@ -6,14 +6,14 @@ from datetime import datetime, timedelta, date
 # sys.path.insert(0, '/home/admin/nmtport')
 from typing import List, Dict,  NamedTuple
 from enum import Enum
-from list_mechanisms import krans as dict_krans, usms as dict_usms # TODO request tot DB
+from list_mechanisms import krans as dict_krans, usms as dict_usms  # TODO request tot DB
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 import smtplib
 import time
 
-krans_UT = [82, 47, 54, 14, 16, 11, 33, 20, 8, 22, 12, 13, 6, 26 ]
+krans_UT = [82, 47, 54, 14, 16, 11, 33, 20, 8, 22, 12, 13, 6, 26]
 krans_GUT = [28, 18, 1, 35, 31, 17, 39, 23, 48, 72, 65, 10]
 HOURS = 10
 FILTER_MINUTS_MORE = 50
@@ -39,7 +39,7 @@ class Color(Enum):
     black = "black"
     blue = "blue"
     orange = "orange"
-    
+
 
 class BgColor(Enum):
     red = "bg-red"
@@ -61,6 +61,7 @@ class PeriodColor(Enum):
     orange = "line-orange"
     black = "line-black"
 
+
 itemsMech = List[Post]
 
 
@@ -81,8 +82,9 @@ class Mechanism:
     sum_dt_minutes: int
     total_work_time: float
     allowable_range: List[int]
-    diff_dt_minutes: List[int]
     red_border: List[int]
+    diff_dt_minutes: List[int]
+    diff_side_time_period: List[int]
 
     def __init__(self, mech_id: int, date_shift: date, shift: int):
         assert date_shift <= datetime.now().date()
@@ -91,7 +93,7 @@ class Mechanism:
         self.shift = shift
         self.cursor = self._get_cursor()
         self.cursor_resons = self._get_resons_from_db()
-        #can't use one function because condition different 
+        # can't use one function because condition different
         self.time_lanch = self._get_time_lanch()
         self.time_tea = self._get_time_tea()
         self.time_shift = self._get_time_shift()
@@ -172,7 +174,7 @@ class Mechanism:
             return None
         if isinstance(a, datetime)\
                 and isinstance(b, datetime):
-            return int((a - b).total_seconds()/60) 
+            return int((a - b).total_seconds()/60)
         if isinstance(a, int)\
                 and isinstance(b, int):
             return a-b
@@ -189,8 +191,9 @@ class Mechanism:
         break_begin = break_period.begin  # - timedelta(minutes=5)
         break_stop = break_period.stop + timedelta(minutes=5)
         max_period = 15
-        my_period = [x for x in all_period if x.timestamp >
-                     break_begin and x.timestamp < break_stop]
+        # my_period = [x for x in all_period if x.timestamp > break_begin and x.timestamp < break_stop]
+        my_period = [x for x in all_period if break_begin <
+                     x.timestamp < break_stop]
         if len(my_period) < 2:
             return break_period
         tmp = my_period[0]
@@ -223,8 +226,8 @@ class Mechanism:
         return new_items
 
     def _convert_to_allowable_range(self, delta_minutes: List[int | None]) -> List[int | None]:
-        assert len(delta_minutes) == len (self.allowable_range)
-        return [self._get_delta_minutes(d, a) for d,a in zip(delta_minutes, self.allowable_range)]
+        assert len(delta_minutes) == len(self.allowable_range)
+        return [self._get_delta_minutes(d, a) for d, a in zip(delta_minutes, self.allowable_range)]
 
     def _get_total_minuts_work(self, data_period) -> int:
         "if brek more 15 minutes then count how not work"
@@ -300,7 +303,8 @@ class Mechanism:
 
         for timestamp, value in data_period:
             for work_period in work_periods:
-                if timestamp > work_period.begin and timestamp <= work_period.stop:
+                # if timestamp > work_period.begin and timestamp <= work_period.stop:
+                if work_period.begin < timestamp <= work_period.stop:
                     split_periods[work_period].append(
                         Post(timestamp, value))
         return split_periods
@@ -333,7 +337,6 @@ class Mechanism:
                     [Period(row.data_nach, row.data_kon), row.id_downtime])
         return tmp_cursor
 
-
     def _check_exist_resons(self, timestamp: datetime | None) -> int | None:
         """if timestamp in reson's period"""
         if timestamp is None:
@@ -342,7 +345,8 @@ class Mechanism:
             begin -= timedelta(minutes=10)
             stop += timedelta(minutes=10)
             # print(begin, stop, timestamp, sep="|")
-            if timestamp > begin and timestamp < stop:
+            # if timestamp > begin and timestamp < stop:
+            if begin < timestamp < stop:
                 return reson
         return None
 
@@ -351,12 +355,12 @@ class Mechanism:
 
     def _get_bg_cells(self):
         result = []
-        assert len(self.dt_minutes) == len (self.red_border)
+        assert len(self.dt_minutes) == len(self.red_border)
         for i in range(6):
             if self.dt_minutes[i] is None:
                 result.append(BgColor.white)
                 continue
-            if self.dt_minutes[i] <= 0: #normal
+            if self.dt_minutes[i] <= 0:  # normal
                 result.append(BgColor.white)
                 continue
             if self.resons[i]:
@@ -370,21 +374,20 @@ class Mechanism:
                 continue
             result.append(BgColor.white)
         return result
-    
+
     def _get_font_cells(self):
         """if value<0 red if value>0 green"""
         result = []
         for i in self.dt_minutes:
             if i is None:
                 result.append(FontColor.white)
-            elif i<0:
+            elif i < 0:
                 result.append(FontColor.red)
-            elif i>0:
+            elif i > 0:
                 result.append(FontColor.green)
             else:
                 result.append(FontColor.white)
         return result
-
 
     def _get_hour_and_minutes(self, time):
         "convert 8,1 to 08:01"
@@ -398,29 +401,25 @@ class Mechanism:
             return f'{h}:{m}'
         return ''
 
-
     def _convert_time_to_str(self, side_times):
         return [self._get_hour_and_minutes(time) for time in side_times]
 
-    def _plus_minute(self, dt_minutes) -> List[int | None]:
+    def _update_dt_minutes(self):
         """because minutes have adding second"""
-        result=[]
         for i in range(6):
-            if dt_minutes[i]:
-                result.append(dt_minutes[i]+self.diff_dt_minutes[i])
-            else:
-                result.append(None)
-        return result
+            if self.dt_minutes[i] is not None:
+                self.dt_minutes[i] += self.diff_dt_minutes[i]
 
     def _clean_color_cell(self):
         assert len(self.dt_minutes) == len(self.resons) == len(self.times)
         for en, dt in enumerate(self.dt_minutes):
-            if dt is None or dt>= 0:
+            if dt is None or dt >= 0:
                 self.resons[en] = None
                 self.times[en] = ""
 
     def show(self):
         print(f"{self.times=}")
+        print(f"{self.side_time_periods=}")
         print(f"{self.dt_minutes=}")
         # print(self.colors_periods)
         print(f"{self.resons=}")
@@ -428,11 +427,19 @@ class Mechanism:
         # print(f"{self.bg_cells}")
         # print(f"{self.font_cells}")
 
+    def _update_side_time_period(self):
+        for i in range(6):
+            if self.side_time_periods[i] is not None:
+                self.side_time_periods[i] += timedelta(
+                    minutes=self.diff_side_time_period[i])
+
 
 class Kran(Mechanism):
     diff_dt_minutes = [0, 0, 0, 0, 0, 1]
     allowable_range = [20, 0, 0, 0, 0, 20]
     red_border = [10, 5, 5, 5, 5, 10]
+    diff_side_time_period = [0, 1, 0, 0, 0, 0]
+
     def __init__(self, number, date, shift):
         self.mech_id = dict_krans[number]
         super().__init__(self.mech_id, date, shift)
@@ -446,34 +453,41 @@ class Kran(Mechanism):
         return [Post(k, int(v[0])) for k, v in self.cursor.items()]
 
     def _get_color_period(self, period_values: List[Post]) -> PeriodColor:
-        yellow = sum([1 for i in period_values if i.value == 0])
+        yellow = sum([1 for i in period_values if i.value == 0]
+                     ) * 5  # because 0 send every 5 minutes
         blue = sum([1 for i in period_values if i.value == 2])
         black = sum([1 for i in period_values if i.value in (1, 3)])
-        orange = sum([1 for i in period_values if i.value == 5])
-        red = 7
+        orange = sum([1 for i in period_values if i.value == 5]
+                     ) * 5  # because 5 send every 5 minute
+        red = 15
         color = {
             yellow: PeriodColor.yellow,
             blue: PeriodColor.blue,
             black: PeriodColor.black,
             orange: PeriodColor.orange,
             red: PeriodColor.red,
-             }
-        more_often = color[max([k for k in color.keys() ])]
-        if blue > 20 and blue > black:
+        }
+        more_often = color[max([k for k in color.keys()])]
+        # if blue > 15 and blue > black:
+        if black < blue > 15:
             return PeriodColor.blue
-        if black > 20 and black > blue:
+        # if black > 15 and black > blue:
+        if blue < black > 15:
             return PeriodColor.black
         if orange >= 10:
             return PeriodColor.orange
-        if orange < 10 and yellow > 10:
+        # if orange < 10 and yellow > 10:
+        if orange < 10 < yellow:
             return PeriodColor.yellow
         return more_often
 
 
 class Usm(Mechanism):
-    diff_dt_minutes = [0, 0, 0, 0, 0, 1] # postible this need del
     allowable_range = [20, 0, 0, 0, 0, 30]
-    red_border = [10, 5, 5, 5, 5, 10] # after
+    red_border = [10, 5, 5, 5, 5, 10]  # after
+    diff_dt_minutes = [0, 0, 0, 0, 0, 1]  # postible this need del
+    diff_side_time_period = [0, 1, -1, 1, 0, 0]
+
     def __init__(self, number, date, shift):
         self.mech_id = dict_usms[number]
         super().__init__(self.mech_id, date, shift)
@@ -517,25 +531,29 @@ def call_methods(obj: Mechanism):
         obj.data_period, obj.work_periods)
     obj.side_time_periods = obj._get_all_side_time_periods(
         obj.split_periods)
+    obj._update_side_time_period()
     obj.dt_minutes = obj._get_delta_allowable_range(
         obj.side_time_periods)
-    obj.dt_minutes = obj._plus_minute(obj.dt_minutes)
+    obj._update_dt_minutes()
     obj.dt_minutes = obj._convert_to_allowable_range(
         obj.dt_minutes)
     obj.dt_minutes = obj._filter_if_more(
         obj.dt_minutes, FILTER_MINUTS_MORE)
-    obj.total_work_time = round(obj._get_total_minuts_work(obj.data_period)/60, 1)
+    obj.total_work_time = round(
+        obj._get_total_minuts_work(obj.data_period)/60, 1)
     obj.times = obj._convert_time_to_str(obj.side_time_periods)
     obj.resons = obj._get_resons()
     obj.bg_cells = obj._get_bg_cells()
-    obj.dt_minutes = [0-x if x else x for x in obj.dt_minutes] # change +/-
+    obj.dt_minutes = [0-x if x else x for x in obj.dt_minutes]  # change +/-
     obj.sum_dt_minutes = sum([x if x else 0 for x in obj.dt_minutes])
-    obj.str_dt_minutes = [str(x) if x else "0" for x in obj.dt_minutes] # convert to str
+    obj.str_dt_minutes = [
+        str(x) if x else "0" for x in obj.dt_minutes]  # convert to str
     obj.font_cells = obj._get_font_cells()
     obj._clean_color_cell()
 
+
 class Table:
-    titles = [ 
+    titles = [
         "номер и статус",
         "начало смены",
         "окончание перед обедом",
@@ -545,11 +563,13 @@ class Table:
         "окончание смены",
         "общие потери и отработанно времени",
     ]
+
     def __init__(self, mechanisms, shift, LIST_RESONS):
-        self.LIST_RESONS=LIST_RESONS
+        self.LIST_RESONS = LIST_RESONS
         self.mechanisms = mechanisms
         self.shift = shift
-        self.total_sum_dt_minutes = sum([m.sum_dt_minutes for m in self.mechanisms])
+        self.total_sum_dt_minutes = sum(
+            [m.sum_dt_minutes for m in self.mechanisms])
         # table = self.make_table(Mechanisms)
 
     def make_table(self) -> str:
@@ -587,7 +607,7 @@ class Table:
                 </div> 
             </td>'''
             table += '</tr>'
-        table += '<tr>' + '<td class=empty></td>'*7 
+        table += '<tr>' + '<td class=empty></td>'*7
         table += f'<td class=total> {self.total_sum_dt_minutes} </td></tr>'
         table += '</table>'
         return table
@@ -595,6 +615,7 @@ class Table:
 
 class Form:
     links = {1: "krans", 2: "krans", 3: "usm"}
+
     def __init__(self, data1, data2, date_shift, division, LIST_RESONS):
         self.date_shift = date_shift
         self.division = division
@@ -745,17 +766,23 @@ class Form:
                 """ + table1 + link1 + """ 
                 <div> &nbsp; </div>
                 <div> 2 смена </div>
-                """ + table2 + link2 +""" 
+                """ + table2 + link2 + """ 
                 <div> </div>
             </body>
         </html>
         """
         return styles + body
 
+
 class Mail:
     HOST = 'smtp.yandex.ru'
     FROM = 'smartportdaly@yandex.ru'
-    mail_pass = os.environ['YANDEX_MAIL']
+    try:
+        mail_pass = os.environ['YANDEX_MAIL']
+    except KeyError:
+        mail_pass = "super"
+        print("PASS not Found")
+
     cc = [
         'Vladimir.Grigoriev@nmtport.ru',
         'Radion.Bespalov@nmtport.ru',
@@ -785,9 +812,11 @@ class Mail:
             'Petr.Gerasimenko@nmtport.ru',
             'Fedor.Tormasov@nmtport.ru',
             'Aleksey.Makogon@nmtport.ru',
+            'Nikolay.Forofontov@nmtport.ru',
             'shift.engineer@nmtport.ru',
         ]
     }
+
     def __init__(self, html: str, division: int):
         self.html = html
         self.division = division
@@ -814,7 +843,6 @@ class Mail:
         server.quit()
 
 
-
 def get_list_resons_from_db() -> Dict[int, str]:
     engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
                            ServerName + '/' + Database + "?" + Driver)
@@ -830,13 +858,14 @@ def get_list_resons_from_db() -> Dict[int, str]:
             tmp_cursor[row.id] = row.name
     return tmp_cursor
 
+
 def every_day(date_shift):
     LIST_RESONS = get_list_resons_from_db()
-    LIST_RESONS = {k: v.lower() for k,v in LIST_RESONS.items()}
+    LIST_RESONS = {k: v.lower() for k, v in LIST_RESONS.items()}
     mech_divisions = {
         1: krans_UT,
         2: krans_GUT,
-        3: list(range(5,14)),
+        3: list(range(5, 14)),
     }
 
     mech_class = {
@@ -844,10 +873,12 @@ def every_day(date_shift):
         2: Kran,
         3: Usm,
     }
-    for i in range(1,4):
-        mechanisms = [mech_class[i](num, date_shift, 1) for num in  (mech_divisions[i])]
+    for i in range(1, 4):
+        mechanisms = [mech_class[i](num, date_shift, 1)
+                      for num in (mech_divisions[i])]
         data1 = [m for m in mechanisms if m.sum_dt_minutes != 0]
-        mechanisms = [mech_class[i](num, date_shift, 2) for num in  (mech_divisions[i])]
+        mechanisms = [mech_class[i](num, date_shift, 2)
+                      for num in (mech_divisions[i])]
         data2 = [m for m in mechanisms if m.sum_dt_minutes != 0]
         form = Form(data1, data2, date_shift, i, LIST_RESONS).get_html()
         mailer = Mail(form, i)
@@ -859,17 +890,18 @@ if __name__ == "__main__":
     while True:
         hour = datetime.now().hour
         minute = datetime.now().minute
-        if hour==10 and minute==0:
+        if hour == 10 and minute == 0:
             date_shift = datetime.now().date() - timedelta(days=1)
             print(datetime.now())
             every_day(date_shift)
         time.sleep(30)
 
+    # -------------------TEST------------------------
     # date_shift = datetime.now().date() - timedelta(days=2)
     # every_day(date_shift)
 
     # date_shift = datetime.now().date() - timedelta(days=1)
-    # k = Kran(35, date_shift, 1)
+    # k = Kran(39, date_shift, 1)
     # k.show()
 
     # date_shift = datetime.now().date() - timedelta(days=1)
