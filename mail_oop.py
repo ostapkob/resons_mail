@@ -6,16 +6,15 @@ from datetime import datetime, timedelta, date
 # sys.path.insert(0, '/home/admin/nmtport')
 from typing import List, Dict,  NamedTuple
 from enum import Enum
-from list_mechanisms import krans as dict_krans, usms as dict_usms  # TODO request tot DB
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 import smtplib
 import time
 
-krans_UT = [82, 47, 54, 14, 16, 11, 33, 20, 8, 22, 12, 13, 6, 26]
+krans_UT = [82, 47, 54, 14, 16, 25, 11, 33, 20, 8, 22, 12, 13, 26]
 krans_GUT = [28, 18, 1, 35, 31, 17, 39, 23, 48, 72, 65, 10]
-HOURS = 10
+HOURS = 0
 FILTER_MINUTS_MORE = 50
 ServerName = "192.168.99.106"
 Database = "nmtport"
@@ -799,14 +798,18 @@ class Mail:
             'Maxim.Anufriev@nmtport.ru',
             'Konstantin.Nikitenko@nmtport.ru',
             'Petr.Gerasimenko@nmtport.ru',
+            'Sergey.Baranovsky@nmtport.ru',
+            'oksana.aleksandrina@nmtport.ru',
+            'dv.vorota@gmail.com',
         ],
         2: [
-            # 'ostap666@yandex.ru',
             'Dmitry.Golynsky@nmtport.ru',
             'Vyacheslav.Gaz@nmtport.ru',
             'Vladimir.Speransky@nmtport.ru',
             'Denis.Medvedev@nmtport.ru',
             'Petr.Gerasimenko@nmtport.ru',
+            'dv.vorota@gmail.com',
+            'T.Ignatuschenko@nmtport.ru'
         ],
         3: [
             'Petr.Gerasimenko@nmtport.ru',
@@ -882,7 +885,25 @@ def every_day(date_shift):
         data2 = [m for m in mechanisms if m.sum_dt_minutes != 0]
         form = Form(data1, data2, date_shift, i, LIST_RESONS).get_html()
         mailer = Mail(form, i)
-        mailer.sent()
+        # mailer.sent()
+
+def  get_dict_type_mech(type_mech):
+        engine = create_engine('mssql+pyodbc://' + UserPwd + '@' +
+                               ServerName + '/' + Database + "?" + Driver)
+        sql = f"""
+        SELECT TOP (1000) 
+               [number]
+              ,[id]
+          FROM [nmtport].[dbo].[mechanism]
+          WHERE
+          type = '{type_mech}'
+        """
+        tmp_cursor = {}
+        with engine.connect() as con:
+            rs = con.execute(sql)
+            for row in rs:
+                tmp_cursor[row[0]] = row[1]
+        return tmp_cursor
 
 
 if __name__ == "__main__":
@@ -891,19 +912,21 @@ if __name__ == "__main__":
         hour = datetime.now().hour
         minute = datetime.now().minute
         if hour == 10 and minute == 0:
+            dict_krans =  get_dict_type_mech('kran')
+            dict_usms =  get_dict_type_mech('usm')
             date_shift = datetime.now().date() - timedelta(days=1)
             print(datetime.now())
             every_day(date_shift)
         time.sleep(30)
 
     # -------------------TEST------------------------
-    # date_shift = datetime.now().date() - timedelta(days=2)
-    # every_day(date_shift)
+    # date_shift = datetime.now().date() - timedelta(days=1)
+    # every_day(date_shift) # comment mailer.sent()
 
     # date_shift = datetime.now().date() - timedelta(days=1)
     # k = Kran(39, date_shift, 1)
     # k.show()
 
     # date_shift = datetime.now().date() - timedelta(days=1)
-    # k = Usm(13, date_shift, 1)
+    # k = Usm(12, date_shift, 1)
     # k.show()
